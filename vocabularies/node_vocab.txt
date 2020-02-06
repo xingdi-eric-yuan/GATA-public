@@ -1,0 +1,99 @@
+player
+inventory
+chopped
+roasted
+diced
+burned
+open
+fried
+grilled
+consumed
+closed
+sliced
+exit
+kitchen
+pantry
+livingroom
+bathroom
+backyard
+bedroom
+garden
+shed
+driveway
+street
+corridor
+supermarket
+bbq
+banana
+barn door
+bed
+black pepper
+block of cheese
+carrot
+chicken breast
+chicken leg
+chicken wing
+cilantro
+commercial glass door
+cookbook
+couch
+counter
+egg
+fiberglass door
+flour
+fridge
+front door
+frosted-glass door
+green apple
+green bell pepper
+green hot pepper
+kitchen island
+knife
+lettuce
+milk
+meal
+olive oil
+orange bell pepper
+oven
+parsley
+patio chair
+patio door
+patio table
+peanut oil
+plain door
+pork chop
+purple potato
+raw
+recipe book
+recipe
+red apple
+red bell pepper
+red hot pepper
+red onion
+red potato
+red tuna
+refrigerator
+salt
+screen door
+shelf
+showcase
+sliding door
+sliding patio door
+sofa
+stove
+sugar
+table
+toilet
+tomato
+toolbox
+uncut
+vegetable oil
+water
+white onion
+white tuna
+wooden door
+workbench
+yellow apple
+yellow bell pepper
+yellow onion
+yellow potato

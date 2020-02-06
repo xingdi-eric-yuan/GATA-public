@@ -1,0 +1,10 @@
+in
+is
+on
+at
+needs
+west_of
+east_of
+north_of
+south_of
+part_of

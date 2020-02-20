@@ -284,9 +284,8 @@ def evaluate_pretrained_command_generation(env, agent, valid_test="valid", verbo
             counter += 1
         if env.batch_pointer == 0:
             break
-    if not agent.philly:
-        with open(agent.experiment_tag + "_output.txt", "w") as f:
-            f.write("\n".join(to_print))
+    with open(agent.experiment_tag + "_output.txt", "w") as f:
+        f.write("\n".join(to_print))
     print("Hard F1: ", np.mean(np.array(total_exact_f1)), "Soft F1:", np.mean(np.array(total_soft_f1)))
     return np.mean(np.array(total_exact_f1)), np.mean(np.array(total_soft_f1))
 
@@ -327,9 +326,8 @@ def evaluate_action_prediction(env, agent, valid_test="valid", verbose=False):
 
         if env.batch_pointer == 0:
             break
-    if not agent.philly:
-        with open(agent.experiment_tag + "_output.txt", "w") as f:
-            f.write("\n".join(to_print))
+    with open(agent.experiment_tag + "_output.txt", "w") as f:
+        f.write("\n".join(to_print))
     print("Eval Loss: {:2.3f}, Eval accuracy: {:2.3f}".format(np.mean(list_eval_loss), np.mean(list_eval_acc)))
     return np.mean(list_eval_loss), np.mean(list_eval_acc)
 
@@ -373,9 +371,8 @@ def evaluate_state_prediction(env, agent, valid_test="valid", verbose=False):
 
         if env.batch_pointer == 0:
             break
-    if not agent.philly:
-        with open(agent.experiment_tag + "_output.txt", "w") as f:
-            f.write("\n".join(to_print))
+    with open(agent.experiment_tag + "_output.txt", "w") as f:
+        f.write("\n".join(to_print))
     print("Eval Loss: {:2.3f}, Eval accuracy: {:2.3f}".format(np.mean(list_eval_loss), np.mean(list_eval_acc)))
     return np.mean(list_eval_loss), np.mean(list_eval_acc)
 

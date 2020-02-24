@@ -165,7 +165,7 @@ class PrioritizedReplayMemory(object):
         encoded_sample = self._encode_sample(idxes, ns)
         if encoded_sample is None:
             return None
-        actual_indices = encoded_sample[-1]
+        actual_indices = encoded_sample[-2]
         for idx in actual_indices:
             p_sample = self._it_sum[idx] / self._it_sum.sum()
             weight = (p_sample * len(self._storage)) ** (-beta)

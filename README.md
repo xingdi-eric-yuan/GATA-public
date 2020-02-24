@@ -1,5 +1,6 @@
 # Learning Dynamic Knowledge Graphs to Generalize on Text-based Games
 ---------------------------------------------------------------------------
+Code for paper [Learning Dynamic Knowledge Graphs to Generalize on Text-based Games](https://arxiv.org/abs/2002.09127).
 
 ```
 # Dependencies
@@ -50,3 +51,22 @@ cd rl.0.1 ; wget https://bit.ly/3877id7 ; unzip rl.0.1.zip ; cd ..
 # Modify config.yaml
 python train_rl.py config.yaml
 ```
+
+## Citation
+
+Please use the following bibtex entry:
+```
+@article{yuan2019imrc,
+  title={Interactive Machine Comprehension with Information Seeking Agents},
+  author={Adhikari, Ashutosh and Yuan, Xingdi and C\^ot\'{e}, Marc-Alexandre and Zelinka, Mikul\'{a}\v{s} and Rondeau, Marc-Antoine and Laroche, Romain and Poupart, Pascal and Tang, Jian and Trischler, Adam and Hamilton, William L.},
+  journal={CoRR},
+  volume={abs/2002.09127},
+  year= {2020},
+  archivePrefix={arXiv},
+  eprint={2002.09127}
+}
+```
+
+## License
+
+[MIT](./LICENSE)

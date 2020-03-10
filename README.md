@@ -9,7 +9,7 @@ source activate /tmp/gata
 pip install --upgrade pip
 pip install numpy==1.16.2
 pip install gym==0.15.4
-pip install https://github.com/microsoft/TextWorld/archive/patch_disable_vocab__auto_extraction.zip
+pip install textworld
 pip install -U spacy
 python -m spacy download en
 pip install tqdm pipreqs h5py pyyaml visdom

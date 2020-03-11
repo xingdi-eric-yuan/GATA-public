@@ -74,8 +74,6 @@ class APData(gym.Env):
         self.data_path = self.config["ap"]["data_path"]
         self.graph_type = self.config["ap"]["graph_type"]
 
-        self.data_path = os.environ['PT_DATA_DIR'] + "/" + self.data_path
-
         self.random_seed = self.config["general"]["random_seed"]
         self.use_this_many_data = self.config["general"]["use_this_many_data"]
 

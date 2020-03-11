@@ -68,7 +68,6 @@ class CommandGenerationData(gym.Env):
 
     def read_config(self):
         self.data_path = self.config["cmd_gen"]["data_path"]
-        self.data_path = os.environ['PT_DATA_DIR'] + "/" + self.data_path
 
         self.random_seed = self.config["general"]["random_seed"]
         self.use_this_many_data = self.config["general"]["use_this_many_data"]

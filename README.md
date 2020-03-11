@@ -19,7 +19,7 @@ conda install pytorch torchvision cudatoolkit=9.2 -c pytorch
 ## Pretraining Action Prediction / State Prediction / Deep Graph Infomax / Command Generation
 ```
 # Word embeddings
-wget "https://bit.ly/38gklt3"
+wget "https://bit.ly/2U3Mde2"
 
 # Action Prediction
 cd ap.0.2 ; wget https://aka.ms/twkg/ap.0.2.zip ; unzip ap.0.2.zip ; cd ..

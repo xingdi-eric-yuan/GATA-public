@@ -48,14 +48,15 @@ def train():
         eval_env, num_eval_game = None, None
 
     # visdom
-    import visdom
-    viz = visdom.Visdom()
-    reward_win, step_win = None, None
-    dqn_loss_win = None
-    eval_game_points_win, eval_step_win = None, None
-    viz_game_rewards, viz_game_points, viz_game_points_normalized, viz_graph_rewards, viz_count_rewards, viz_step = [], [], [], [], [], []
-    viz_dqn_loss = []
-    viz_eval_game_points, viz_eval_game_points_normalized, viz_eval_step = [], [], []
+    if config["general"]["visdom"]:
+        import visdom
+        viz = visdom.Visdom()
+        reward_win, step_win = None, None
+        dqn_loss_win = None
+        eval_game_points_win, eval_step_win = None, None
+        viz_game_rewards, viz_game_points, viz_game_points_normalized, viz_graph_rewards, viz_count_rewards, viz_step = [], [], [], [], [], []
+        viz_dqn_loss = []
+        viz_eval_game_points, viz_eval_game_points_normalized, viz_eval_step = [], [], []
 
     step_in_total = 0
     episode_no = 0
@@ -118,7 +119,7 @@ def train():
         observation_for_counting = copy.copy(observation_strings)
         observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
         i_have_seen_these_states.push(current_triplets)  # update init triplets into memory
-        
+
         if agent.count_reward_lambda > 0:
             agent.reset_binarized_counter(batch_size)
             _ = agent.get_binarized_count(observation_for_counting)
@@ -299,102 +300,103 @@ def train():
             perfect_training = 0
 
         # plot using visdom
-        viz_game_rewards.append(running_avg_game_rewards.get_avg())
-        viz_game_points.append(running_avg_game_points.get_avg())
-        viz_game_points_normalized.append(running_avg_game_points_normalized.get_avg())
-        viz_graph_rewards.append(running_avg_graph_rewards.get_avg())
-        viz_count_rewards.append(running_avg_count_rewards.get_avg())
-        viz_step.append(running_avg_game_steps.get_avg())
-        viz_dqn_loss.append(running_avg_dqn_loss.get_avg())
-        viz_eval_game_points.append(eval_game_points)
-        viz_eval_game_points_normalized.append(eval_game_points_normalized)
-        viz_eval_step.append(eval_game_step)
-        viz_x = np.arange(len(viz_game_rewards)).tolist()
+        if config["general"]["visdom"]:
+            viz_game_rewards.append(running_avg_game_rewards.get_avg())
+            viz_game_points.append(running_avg_game_points.get_avg())
+            viz_game_points_normalized.append(running_avg_game_points_normalized.get_avg())
+            viz_graph_rewards.append(running_avg_graph_rewards.get_avg())
+            viz_count_rewards.append(running_avg_count_rewards.get_avg())
+            viz_step.append(running_avg_game_steps.get_avg())
+            viz_dqn_loss.append(running_avg_dqn_loss.get_avg())
+            viz_eval_game_points.append(eval_game_points)
+            viz_eval_game_points_normalized.append(eval_game_points_normalized)
+            viz_eval_step.append(eval_game_step)
+            viz_x = np.arange(len(viz_game_rewards)).tolist()
 
-        if reward_win is None:
-            reward_win = viz.line(X=viz_x, Y=viz_game_rewards,
-                                opts=dict(title=agent.experiment_tag + "_game_rewards"),
-                                name="game_rewards")
-            viz.line(X=viz_x, Y=viz_graph_rewards,
-                        opts=dict(title=agent.experiment_tag + "_graph_rewards"),
-                        win=reward_win, update='append', name="graph_rewards")
-            viz.line(X=viz_x, Y=viz_count_rewards,
-                        opts=dict(title=agent.experiment_tag + "_count_rewards"),
-                        win=reward_win, update='append', name="count_rewards")
-            viz.line(X=viz_x, Y=viz_game_points,
-                        opts=dict(title=agent.experiment_tag + "_game_points"),
-                        win=reward_win, update='append', name="game_points")
-            viz.line(X=viz_x, Y=viz_game_points_normalized,
-                        opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
-                        win=reward_win, update='append', name="game_points_normalized")
-        else:
-            viz.line(X=[len(viz_game_rewards) - 1], Y=[viz_game_rewards[-1]],
-                        opts=dict(title=agent.experiment_tag + "_game_rewards"),
-                        win=reward_win,
-                        update='append', name="game_rewards")
-            viz.line(X=[len(viz_graph_rewards) - 1], Y=[viz_graph_rewards[-1]],
-                        opts=dict(title=agent.experiment_tag + "_graph_rewards"),
-                        win=reward_win,
-                        update='append', name="graph_rewards")
-            viz.line(X=[len(viz_count_rewards) - 1], Y=[viz_count_rewards[-1]],
-                        opts=dict(title=agent.experiment_tag + "_count_rewards"),
-                        win=reward_win,
-                        update='append', name="count_rewards")
-            viz.line(X=[len(viz_game_points) - 1], Y=[viz_game_points[-1]],
-                        opts=dict(title=agent.experiment_tag + "_game_points"),
-                        win=reward_win,
-                        update='append', name="game_points")
-            viz.line(X=[len(viz_game_points_normalized) - 1], Y=[viz_game_points_normalized[-1]],
-                        opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
-                        win=reward_win,
-                        update='append', name="game_points_normalized")
+            if reward_win is None:
+                reward_win = viz.line(X=viz_x, Y=viz_game_rewards,
+                                    opts=dict(title=agent.experiment_tag + "_game_rewards"),
+                                    name="game_rewards")
+                viz.line(X=viz_x, Y=viz_graph_rewards,
+                            opts=dict(title=agent.experiment_tag + "_graph_rewards"),
+                            win=reward_win, update='append', name="graph_rewards")
+                viz.line(X=viz_x, Y=viz_count_rewards,
+                            opts=dict(title=agent.experiment_tag + "_count_rewards"),
+                            win=reward_win, update='append', name="count_rewards")
+                viz.line(X=viz_x, Y=viz_game_points,
+                            opts=dict(title=agent.experiment_tag + "_game_points"),
+                            win=reward_win, update='append', name="game_points")
+                viz.line(X=viz_x, Y=viz_game_points_normalized,
+                            opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
+                            win=reward_win, update='append', name="game_points_normalized")
+            else:
+                viz.line(X=[len(viz_game_rewards) - 1], Y=[viz_game_rewards[-1]],
+                            opts=dict(title=agent.experiment_tag + "_game_rewards"),
+                            win=reward_win,
+                            update='append', name="game_rewards")
+                viz.line(X=[len(viz_graph_rewards) - 1], Y=[viz_graph_rewards[-1]],
+                            opts=dict(title=agent.experiment_tag + "_graph_rewards"),
+                            win=reward_win,
+                            update='append', name="graph_rewards")
+                viz.line(X=[len(viz_count_rewards) - 1], Y=[viz_count_rewards[-1]],
+                            opts=dict(title=agent.experiment_tag + "_count_rewards"),
+                            win=reward_win,
+                            update='append', name="count_rewards")
+                viz.line(X=[len(viz_game_points) - 1], Y=[viz_game_points[-1]],
+                            opts=dict(title=agent.experiment_tag + "_game_points"),
+                            win=reward_win,
+                            update='append', name="game_points")
+                viz.line(X=[len(viz_game_points_normalized) - 1], Y=[viz_game_points_normalized[-1]],
+                            opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
+                            win=reward_win,
+                            update='append', name="game_points_normalized")
 
-        if step_win is None:
-            step_win = viz.line(X=viz_x, Y=viz_step,
-                                opts=dict(title=agent.experiment_tag + "_step"),
-                                name="step")
-        else:
-            viz.line(X=[len(viz_step) - 1], Y=[viz_step[-1]],
-                        opts=dict(title=agent.experiment_tag + "_step"),
-                        win=step_win,
-                        update='append', name="step")
+            if step_win is None:
+                step_win = viz.line(X=viz_x, Y=viz_step,
+                                    opts=dict(title=agent.experiment_tag + "_step"),
+                                    name="step")
+            else:
+                viz.line(X=[len(viz_step) - 1], Y=[viz_step[-1]],
+                            opts=dict(title=agent.experiment_tag + "_step"),
+                            win=step_win,
+                            update='append', name="step")
 
-        if dqn_loss_win is None:
-            dqn_loss_win = viz.line(X=viz_x, Y=viz_dqn_loss,
-                                opts=dict(title=agent.experiment_tag + "_dqn_loss"),
-                                name="dqn loss")
-        else:
-            viz.line(X=[len(viz_dqn_loss) - 1], Y=[viz_dqn_loss[-1]],
-                        opts=dict(title=agent.experiment_tag + "_dqn_loss"),
-                        win=dqn_loss_win,
-                        update='append', name="dqn loss")
+            if dqn_loss_win is None:
+                dqn_loss_win = viz.line(X=viz_x, Y=viz_dqn_loss,
+                                    opts=dict(title=agent.experiment_tag + "_dqn_loss"),
+                                    name="dqn loss")
+            else:
+                viz.line(X=[len(viz_dqn_loss) - 1], Y=[viz_dqn_loss[-1]],
+                            opts=dict(title=agent.experiment_tag + "_dqn_loss"),
+                            win=dqn_loss_win,
+                            update='append', name="dqn loss")
 
-        if eval_game_points_win is None:
-            eval_game_points_win = viz.line(X=viz_x, Y=viz_eval_game_points,
-                                opts=dict(title=agent.experiment_tag + "_eval_game_points"),
-                                name="eval game points")
-            viz.line(X=viz_x, Y=viz_eval_game_points_normalized,
-                        opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
-                        win=eval_game_points_win, update='append', name="eval_game_points_normalized")
-        else:
-            viz.line(X=[len(viz_eval_game_points) - 1], Y=[viz_eval_game_points[-1]],
-                        opts=dict(title=agent.experiment_tag + "_eval_game_points"),
-                        win=eval_game_points_win,
-                        update='append', name="eval game_points")
-            viz.line(X=[len(viz_eval_game_points_normalized) - 1], Y=[viz_eval_game_points_normalized[-1]],
-                        opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
-                        win=eval_game_points_win,
-                        update='append', name="eval_game_points_normalized")
+            if eval_game_points_win is None:
+                eval_game_points_win = viz.line(X=viz_x, Y=viz_eval_game_points,
+                                    opts=dict(title=agent.experiment_tag + "_eval_game_points"),
+                                    name="eval game points")
+                viz.line(X=viz_x, Y=viz_eval_game_points_normalized,
+                            opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
+                            win=eval_game_points_win, update='append', name="eval_game_points_normalized")
+            else:
+                viz.line(X=[len(viz_eval_game_points) - 1], Y=[viz_eval_game_points[-1]],
+                            opts=dict(title=agent.experiment_tag + "_eval_game_points"),
+                            win=eval_game_points_win,
+                            update='append', name="eval game_points")
+                viz.line(X=[len(viz_eval_game_points_normalized) - 1], Y=[viz_eval_game_points_normalized[-1]],
+                            opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
+                            win=eval_game_points_win,
+                            update='append', name="eval_game_points_normalized")
 
-        if eval_step_win is None:
-            eval_step_win = viz.line(X=viz_x, Y=viz_eval_step,
-                                opts=dict(title=agent.experiment_tag + "_eval_step"),
-                                name="eval step")
-        else:
-            viz.line(X=[len(viz_eval_step) - 1], Y=[viz_eval_step[-1]],
-                        opts=dict(title=agent.experiment_tag + "_eval_step"),
-                        win=eval_step_win,
-                        update='append', name="eval step")
+            if eval_step_win is None:
+                eval_step_win = viz.line(X=viz_x, Y=viz_eval_step,
+                                    opts=dict(title=agent.experiment_tag + "_eval_step"),
+                                    name="eval step")
+            else:
+                viz.line(X=[len(viz_eval_step) - 1], Y=[viz_eval_step[-1]],
+                            opts=dict(title=agent.experiment_tag + "_eval_step"),
+                            win=eval_step_win,
+                            update='append', name="eval step")
 
         # write accuracies down into file
         _s = json.dumps({"time spent": str(time_2 - time_1).rsplit(".")[0],

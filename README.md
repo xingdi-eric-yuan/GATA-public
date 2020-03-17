@@ -52,6 +52,10 @@ cd rl.0.1 ; wget https://aka.ms/twkg/rl.0.1.zip ; unzip rl.0.1.zip ; cd ..
 python train_rl.py config.yaml
 ```
 
+### Monitoring training progress
+To monitor training progress: set "`visdom: True`" in `config.yaml` under the `general` section, and start [Visdom](https://github.com/facebookresearch/visdom) in another terminal using the `visdom` command line. Then, open the link displayed by Visdom in your browser.
+
+
 ## Citation
 
 Please use the following bibtex entry:

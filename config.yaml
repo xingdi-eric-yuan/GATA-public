@@ -3,6 +3,7 @@ general:
   random_seed: 42
   use_this_many_data: -1
   use_cuda: True  # disable this when running on machine without cuda
+  visdom: False  # Plot training curves using Visdom
 
   training:
     batch_size: 1  # for sp, change this to 64

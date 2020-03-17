@@ -23,11 +23,12 @@ def train():
     ave_train_loss = generic.HistoryScoreCache(capacity=500)
 
     # visdom
-    import visdom
-    viz = visdom.Visdom()
-    plt_win = None
-    eval_plt_win = None
-    viz_loss, viz_eval_exact_f1, viz_eval_soft_f1 = [], [], []
+    if config["general"]["visdom"]:
+        import visdom
+        viz = visdom.Visdom()
+        plt_win = None
+        eval_plt_win = None
+        viz_loss, viz_eval_exact_f1, viz_eval_soft_f1 = [], [], []
 
     episode_no = 0
     batch_no = 0
@@ -70,8 +71,6 @@ def train():
             if agent.report_frequency == 0 or (episode_no % agent.report_frequency > (episode_no - curr_batch_size) % agent.report_frequency):
                 continue
 
-            viz_loss.append(ave_train_loss.get_avg())
-
             eval_f1_exact, eval_f1_soft = 0.0, 0.0
             if episode_no % agent.report_frequency <= (episode_no - curr_batch_size) % agent.report_frequency:
                 if agent.run_eval:
@@ -94,37 +93,39 @@ def train():
             print("Episode: {:3d} | time spent: {:s} | loss: {:2.3f} | valid exact f1: {:2.3f} | valid soft f1: {:2.3f}".format(episode_no, str(time_2 - time_1).rsplit(".")[0], loss, eval_f1_exact, eval_f1_soft))
 
             # plot using visdom
-            viz_eval_exact_f1.append(eval_f1_exact)
-            viz_eval_soft_f1.append(eval_f1_soft)
-            viz_x = np.arange(len(viz_loss)).tolist()
-            viz_eval_x = np.arange(len(viz_eval_exact_f1)).tolist()
+            if config["general"]["visdom"]:
+                viz_loss.append(ave_train_loss.get_avg())
+                viz_eval_exact_f1.append(eval_f1_exact)
+                viz_eval_soft_f1.append(eval_f1_soft)
+                viz_x = np.arange(len(viz_loss)).tolist()
+                viz_eval_x = np.arange(len(viz_eval_exact_f1)).tolist()
 
-            if plt_win is None:
-                plt_win = viz.line(X=viz_x, Y=viz_loss,
-                                opts=dict(title=agent.experiment_tag + "_loss"),
-                                name="training loss")
-            else:
-                viz.line(X=[len(viz_loss) - 1], Y=[viz_loss[-1]],
-                        opts=dict(title=agent.experiment_tag + "_loss"),
-                        win=plt_win,
-                        update='append', name="training loss")
+                if plt_win is None:
+                    plt_win = viz.line(X=viz_x, Y=viz_loss,
+                                    opts=dict(title=agent.experiment_tag + "_loss"),
+                                    name="training loss")
+                else:
+                    viz.line(X=[len(viz_loss) - 1], Y=[viz_loss[-1]],
+                            opts=dict(title=agent.experiment_tag + "_loss"),
+                            win=plt_win,
+                            update='append', name="training loss")
 
-            if eval_plt_win is None:
-                eval_plt_win = viz.line(X=viz_eval_x, Y=viz_eval_exact_f1,
-                                opts=dict(title=agent.experiment_tag + "_exact_f1"),
-                                name="eval exact f1")
-                viz.line(X=viz_eval_x, Y=viz_eval_soft_f1,
-                        opts=dict(title=agent.experiment_tag + "_soft_f1"),
-                        win=eval_plt_win, update='append', name="eval soft f1")
-            else:
-                viz.line(X=[len(viz_eval_exact_f1) - 1], Y=[viz_eval_exact_f1[-1]],
-                        opts=dict(title=agent.experiment_tag + "_exact_f1"),
-                        win=eval_plt_win,
-                        update='append', name="eval exact f1")
-                viz.line(X=[len(viz_eval_soft_f1) - 1], Y=[viz_eval_soft_f1[-1]],
-                        opts=dict(title=agent.experiment_tag + "_soft_f1"),
-                        win=eval_plt_win,
-                        update='append', name="eval soft f1")
+                if eval_plt_win is None:
+                    eval_plt_win = viz.line(X=viz_eval_x, Y=viz_eval_exact_f1,
+                                    opts=dict(title=agent.experiment_tag + "_exact_f1"),
+                                    name="eval exact f1")
+                    viz.line(X=viz_eval_x, Y=viz_eval_soft_f1,
+                            opts=dict(title=agent.experiment_tag + "_soft_f1"),
+                            win=eval_plt_win, update='append', name="eval soft f1")
+                else:
+                    viz.line(X=[len(viz_eval_exact_f1) - 1], Y=[viz_eval_exact_f1[-1]],
+                            opts=dict(title=agent.experiment_tag + "_exact_f1"),
+                            win=eval_plt_win,
+                            update='append', name="eval exact f1")
+                    viz.line(X=[len(viz_eval_soft_f1) - 1], Y=[viz_eval_soft_f1[-1]],
+                            opts=dict(title=agent.experiment_tag + "_soft_f1"),
+                            win=eval_plt_win,
+                            update='append', name="eval soft f1")
 
             # write accuracies down into file
             _s = json.dumps({"time spent": str(time_2 - time_1).rsplit(".")[0],
@@ -134,7 +135,7 @@ def train():
             with open(output_dir + "/" + json_file_name + '.json', 'a+') as outfile:
                 outfile.write(_s + '\n')
                 outfile.flush()
-    
+
     # At any point you can hit Ctrl + C to break out of training early.
     except KeyboardInterrupt:
         print('--------------------------------------------')

@@ -24,11 +24,12 @@ def train():
     ave_train_loss = generic.HistoryScoreCache(capacity=500)
 
     # visdom
-    import visdom
-    viz = visdom.Visdom()
-    loss_win = None
-    eval_acc_win = None
-    viz_loss, viz_eval_loss, viz_eval_acc = [], [], []
+    if config["general"]["visdom"]:
+        import visdom
+        viz = visdom.Visdom()
+        loss_win = None
+        eval_acc_win = None
+        viz_loss, viz_eval_loss, viz_eval_acc = [], [], []
 
     episode_no = 0
     batch_no = 0
@@ -78,8 +79,6 @@ def train():
             if agent.report_frequency == 0 or (episode_no % agent.report_frequency > (episode_no - curr_batch_size) % agent.report_frequency):
                 continue
 
-            viz_loss.append(ave_train_loss.get_avg())
-
             eval_acc, eval_loss = 0.0, 0.0
             if episode_no % agent.report_frequency <= (episode_no - curr_batch_size) % agent.report_frequency:
                 if agent.run_eval:
@@ -98,36 +97,38 @@ def train():
             print("Episode: {:3d} | time spent: {:s} | sliding window loss: {:2.3f} | Eval Acc: {:2.3f} | Eval Loss: {:2.3f}".format(episode_no, str(time_2 - time_1).rsplit(".")[0], ave_train_loss.get_avg(), eval_acc, eval_loss))
 
             # plot using visdom
-            viz_eval_acc.append(eval_acc)
-            viz_eval_loss.append(eval_loss)
-            viz_x = np.arange(len(viz_loss)).tolist()
-            viz_eval_x = np.arange(len(viz_eval_acc)).tolist()
+            if config["general"]["visdom"]:
+                viz_loss.append(ave_train_loss.get_avg())
+                viz_eval_acc.append(eval_acc)
+                viz_eval_loss.append(eval_loss)
+                viz_x = np.arange(len(viz_loss)).tolist()
+                viz_eval_x = np.arange(len(viz_eval_acc)).tolist()
 
-            if loss_win is None:
-                loss_win = viz.line(X=viz_x, Y=viz_loss,
-                                    opts=dict(title=agent.experiment_tag + "_loss"),
-                                    name="training loss")
-                viz.line(X=viz_eval_x, Y=viz_eval_loss,
-                        opts=dict(title=agent.experiment_tag + "_eval_loss"),
-                        win=loss_win, update='append', name="eval loss")
-            else:
-                viz.line(X=[len(viz_loss) - 1], Y=[viz_loss[-1]],
-                            opts=dict(title=agent.experiment_tag + "_loss"),
-                            win=loss_win,
-                            update='append', name="training loss")
-                viz.line(X=[len(viz_eval_loss) - 1], Y=[viz_eval_loss[-1]],
-                        opts=dict(title=agent.experiment_tag + "_eval_loss"),
-                        win=loss_win, update='append', name="eval loss")
+                if loss_win is None:
+                    loss_win = viz.line(X=viz_x, Y=viz_loss,
+                                        opts=dict(title=agent.experiment_tag + "_loss"),
+                                        name="training loss")
+                    viz.line(X=viz_eval_x, Y=viz_eval_loss,
+                            opts=dict(title=agent.experiment_tag + "_eval_loss"),
+                            win=loss_win, update='append', name="eval loss")
+                else:
+                    viz.line(X=[len(viz_loss) - 1], Y=[viz_loss[-1]],
+                                opts=dict(title=agent.experiment_tag + "_loss"),
+                                win=loss_win,
+                                update='append', name="training loss")
+                    viz.line(X=[len(viz_eval_loss) - 1], Y=[viz_eval_loss[-1]],
+                            opts=dict(title=agent.experiment_tag + "_eval_loss"),
+                            win=loss_win, update='append', name="eval loss")
 
-            if eval_acc_win is None:
-                eval_acc_win = viz.line(X=viz_eval_x, Y=viz_eval_acc,
-                                        opts=dict(title=agent.experiment_tag + "_eval_acc"),
-                                        name="eval accuracy")
-            else:
-                viz.line(X=[len(viz_eval_acc) - 1], Y=[viz_eval_acc[-1]],
-                            opts=dict(title=agent.experiment_tag + "_eval_acc"),
-                            win=eval_acc_win,
-                            update='append', name="eval accuracy")
+                if eval_acc_win is None:
+                    eval_acc_win = viz.line(X=viz_eval_x, Y=viz_eval_acc,
+                                            opts=dict(title=agent.experiment_tag + "_eval_acc"),
+                                            name="eval accuracy")
+                else:
+                    viz.line(X=[len(viz_eval_acc) - 1], Y=[viz_eval_acc[-1]],
+                                opts=dict(title=agent.experiment_tag + "_eval_acc"),
+                                win=eval_acc_win,
+                                update='append', name="eval accuracy")
 
             # write accuracies down into file
             _s = json.dumps({"time spent": str(time_2 - time_1).rsplit(".")[0],

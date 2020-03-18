@@ -16,10 +16,9 @@ def get_training_game_env(data_dir, difficulty_level, training_size, requested_i
     else:
         game_file_names.append(game_path)
 
-    env_id = textworld.gym.register_games(sorted(game_file_names), requested_infos,
-                                          max_episode_steps=max_episode_steps,
-                                          name="training")
-    env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
+    env_id = textworld.gym.register_games(sorted(game_file_names), request_infos=requested_infos,
+                                          max_episode_steps=max_episode_steps, batch_size=batch_size,
+                                          name="training", asynchronous=True, auto_reset=False)
     env = gym.make(env_id)
     num_game = len(game_file_names)
     return env, num_game
@@ -36,10 +35,9 @@ def get_evaluation_game_env(data_dir, difficulty_level, requested_infos, max_epi
     else:
         game_file_names.append(game_path)
 
-    env_id = textworld.gym.register_games(sorted(game_file_names), requested_infos,
-                                                max_episode_steps=max_episode_steps,
-                                                name="eval")
-    env_id = textworld.gym.make_batch(env_id, batch_size=batch_size, parallel=True)
+    env_id = textworld.gym.register_games(sorted(game_file_names), request_infos=requested_infos,
+                                          max_episode_steps=max_episode_steps, batch_size=batch_size,
+                                          name="eval", asynchronous=True, auto_reset=False)
     env = gym.make(env_id)
     num_game = len(game_file_names)
     return env, num_game

@@ -6,7 +6,7 @@ general:
   visdom: False  # Plot training curves using Visdom
 
   training:
-    batch_size: 1  # for sp, change this to 64
+    batch_size: 1  # for ap/dgi, change this to 128, for sp, change this to 64, for RL, use 1
     max_episode: 100000
     smoothing_eps: 0.1
     optimizer:
@@ -20,7 +20,7 @@ general:
   evaluate:
     run_eval: True
     g_belief: False
-    batch_size: 1  # for sp, change this to 64
+    batch_size: 1  # for ap/dgi, change this to 128, change this to 64, for RL, use 1
     max_target_length: 100
 
   checkpoint:

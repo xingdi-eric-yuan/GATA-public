@@ -4,8 +4,8 @@ import logging
 import numpy as np
 
 import torch
-from layers import Embedding, EncoderBlock, DecoderBlock, CQAttention, StackedRelationalGraphConvolution
-from layers import PointerSoftmax, masked_softmax, NoisyLinear, SelfAttention, LSTMCell, DGIDiscriminator, masked_mean
+from layers import Embedding, EncoderBlock, DecoderBlock, DecoderBlockForObsGen, CQAttention, StackedRelationalGraphConvolution
+from layers import PointerSoftmax, masked_softmax, NoisyLinear, SelfAttention, LSTMCell, DGIDiscriminator, masked_mean, ObservationDiscriminator
 from generic import to_pt
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ class KG_Manipulation(torch.nn.Module):
         self.gcn_hidden_dims = model_config['gcn_hidden_dims']
         self.gcn_highway_connections = model_config['gcn_highway_connections']
         self.gcn_num_bases = model_config['gcn_num_bases']
+        self.real_valued_graph = model_config['real_valued_graph']
 
         self.encoder_layers = model_config['encoder_layers']
         self.decoder_layers = model_config['decoder_layers']
@@ -107,7 +108,7 @@ class KG_Manipulation(torch.nn.Module):
         self.encoder =  torch.nn.ModuleList([EncoderBlock(conv_num=self.encoder_conv_num, ch_num=self.block_hidden_dim, k=5, block_hidden_dim=self.block_hidden_dim, n_head=self.n_heads, dropout=self.block_dropout) for _ in range(self.encoder_layers)])
 
         self.rgcns = StackedRelationalGraphConvolution(entity_input_dim=self.node_embedding_size+self.block_hidden_dim, relation_input_dim=self.relation_embedding_size+self.block_hidden_dim, num_relations=self.relation_vocab_size, hidden_dims=self.gcn_hidden_dims, num_bases=self.gcn_num_bases,
-        use_highway_connections=self.gcn_highway_connections, dropout_rate=self.dropout)
+        use_highway_connections=self.gcn_highway_connections, dropout_rate=self.dropout, real_valued_graph=self.real_valued_graph)
         self.attention = CQAttention(block_hidden_dim=self.block_hidden_dim, dropout=self.attention_dropout)
         self.attention_prj = torch.nn.Linear(self.block_hidden_dim * 4, self.block_hidden_dim, bias=False)
 
@@ -133,6 +134,17 @@ class KG_Manipulation(torch.nn.Module):
         self.decoder = torch.nn.ModuleList([DecoderBlock(ch_num=self.block_hidden_dim, k=5, block_hidden_dim=self.block_hidden_dim, n_head=self.n_heads, dropout=self.block_dropout) for _ in range(self.decoder_layers)])
         self.tgt_word_prj = torch.nn.Linear(self.block_hidden_dim, self.word_vocab_size, bias=False)
         self.pointer_softmax = PointerSoftmax(input_dim=self.block_hidden_dim, hidden_dim=self.block_hidden_dim)
+
+        # observation generation
+        self.obs_gen_attention = CQAttention(block_hidden_dim=self.block_hidden_dim, dropout=self.attention_dropout)
+        self.obs_gen_attention_prj = torch.nn.Linear(self.block_hidden_dim * 4, self.block_hidden_dim, bias=False)
+        self.obs_gen_decoder = torch.nn.ModuleList([DecoderBlockForObsGen(ch_num=self.block_hidden_dim, k=5, block_hidden_dim=self.block_hidden_dim, n_head=self.n_heads, dropout=self.block_dropout) for _ in range(self.decoder_layers)])
+        self.obs_gen_tgt_word_prj = torch.nn.Linear(self.block_hidden_dim, self.word_vocab_size, bias=False)
+        self.obs_gen_linear_1 = torch.nn.Linear(self.block_hidden_dim, self.block_hidden_dim)
+        self.obs_gen_linear_2 = torch.nn.Linear(self.block_hidden_dim, int(len(self.relation_vocab) / 2) * len(self.node_vocab) * len(self.node_vocab))
+        self.obs_gen_attention_to_rnn_input = torch.nn.Linear(self.block_hidden_dim * 4, self.block_hidden_dim)
+        self.obs_gen_graph_rnncell = torch.nn.GRUCell(self.block_hidden_dim, self.block_hidden_dim)
+        self.observation_discriminator = ObservationDiscriminator(self.block_hidden_dim)
 
         # action prediction
         self.ap_attention = CQAttention(block_hidden_dim=self.block_hidden_dim, dropout=self.attention_dropout)
@@ -249,6 +261,24 @@ class KG_Manipulation(torch.nn.Module):
         subsequent_mask = subsequent_mask.unsqueeze(0)  # 1 x time x time
         return subsequent_mask
 
+    def decode_for_obs_gen(self, input_target_word_ids, h_ag2, prev_action_mask, h_ga2, node_mask):
+        trg_embeddings, trg_mask = self.embed(input_target_word_ids) # batch x target_len x emb
+
+        trg_mask_square = torch.bmm(trg_mask.unsqueeze(-1), trg_mask.unsqueeze(1)) # batch x target_len x target_len
+        trg_mask_square = trg_mask_square * self.get_subsequent_mask(input_target_word_ids) # batch x target_len x target_len
+
+        prev_action_mask_square = torch.bmm(trg_mask.unsqueeze(-1), prev_action_mask.unsqueeze(1))
+        node_mask_square = torch.bmm(trg_mask.unsqueeze(-1), node_mask.unsqueeze(1)) # batch x target_len x num_nodes
+
+        trg_decoder_output = trg_embeddings
+        for i in range(self.decoder_layers):
+            trg_decoder_output, _ = self.obs_gen_decoder[i](trg_decoder_output, trg_mask, trg_mask_square, h_ag2, prev_action_mask_square, h_ga2, node_mask_square, i * 3 + 1, self.decoder_layers)
+
+        trg_decoder_output = self.obs_gen_tgt_word_prj(trg_decoder_output)
+        trg_decoder_output = masked_softmax(trg_decoder_output, m=trg_mask.unsqueeze(-1), axis=-1)
+        # eliminating pointer softmax
+        return trg_decoder_output
+        
     def decode(self, input_target_word_ids, h_og, obs_mask, h_go, node_mask, input_obs):
         trg_embeddings, trg_mask = self.embed(input_target_word_ids)  # batch x target_len x emb
 

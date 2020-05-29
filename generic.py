@@ -113,21 +113,16 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', value=0.):
 
 def normalize_string(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
-    def remove_articles(text):
-        return re.sub(r'\b(a|an|the|<bos>|<eos>|<sep>|<pad>|<unk>)\b', ' ', text)
+    def remove_special_tokens(text):
+        return re.sub(r'(<bos>|<eos>|<sep>|<pad>|<unk>)', ' ', text)
 
     def white_space_fix(text):
         return ' '.join(text.split())
 
-    def remove_punc(text):
-        exclude = set(string.punctuation)
-        return ''.join(ch for ch in text if ch not in exclude)
-
     def lower(text):
         return text.lower()
 
-    # return white_space_fix(remove_articles(remove_punc(lower(s))))
-    return white_space_fix(s)
+    return white_space_fix(remove_special_tokens(lower(s)))
 
 
 def f1_score(prediction, ground_truth):
@@ -144,6 +139,19 @@ def f1_score(prediction, ground_truth):
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
 
+def precision_recall_f1_score(prediction, ground_truth):
+    if prediction == ground_truth:
+        return 1.0, 1.0, 1.0
+    prediction_tokens = normalize_string(prediction).split()
+    ground_truth_tokens = normalize_string(ground_truth).split()
+    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
+    num_same = sum(common.values())
+    if num_same == 0:
+        return 0., 0., 0.
+    precision = 1.0 * num_same / len(prediction_tokens)
+    recall = 1.0 * num_same / len(ground_truth_tokens)
+    f1 = (2 * precision * recall) / (precision + recall)
+    return precision, recall, f1
 
 def f1_score_over_ground_truths(prediction, ground_truths):
     scores_for_ground_truths = []
@@ -181,6 +189,12 @@ def list_of_word_id_list_to_char_input(list_of_word_id_list, id2word, char2id):
     for i in range(len(list_of_word_id_list)):
         res.append([id2word[item] for item in list_of_word_id_list[i]])
     return list_of_token_list_to_char_input(res, char2id)
+
+
+def get_match_result_obs_gen(prediction_string, groundtruth_string):
+    pred_string = prediction_string.split("<eos>")[0].rstrip()
+    gt_string = groundtruth_string.split("<eos>")[0].rstrip()
+    return precision_recall_f1_score(pred_string, gt_string)
 
 
 def get_match_result(prediction_string, groundtruth_string, type='exact'):
@@ -787,6 +801,8 @@ class LinearSchedule(object):
         self.schedule = np.linspace(initial_p, final_p, schedule_timesteps)
 
     def value(self, step):
+        if step < 0:
+            return self.initial_p
         if step >= self.schedule_timesteps:
             return self.final_p
         else:

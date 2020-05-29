@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import os
-from generic import get_match_result, to_np
+from generic import get_match_result, to_np, get_match_result_obs_gen
 
 
 def evaluate_with_ground_truth_graph(env, agent, num_games):
@@ -40,7 +40,7 @@ def evaluate_with_ground_truth_graph(env, agent, num_games):
         for step_no in range(agent.eval_max_nb_steps_per_episode):
 
             # choose what to do next from candidate list
-            chosen_actions, chosen_indices, _, prev_h, prev_c = agent.act_greedy(observation_strings, current_triplets, action_candidate_list, prev_h, prev_c)
+            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, current_triplets, action_candidate_list, prev_h, prev_c)
             # send chosen actions to game engine
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
@@ -122,7 +122,7 @@ def evaluate(env, agent, num_games):
         for step_no in range(agent.eval_max_nb_steps_per_episode):
 
             # choose what to do next from candidate list
-            chosen_actions, chosen_indices, _, prev_h, prev_c = agent.act_greedy(observation_strings, current_triplets, action_candidate_list, prev_h, prev_c)
+            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, current_triplets, action_candidate_list, prev_h, prev_c)
             # send chosen actions to game engine
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
@@ -207,7 +207,7 @@ def evaluate_belief_mode(env, agent, num_games):
             generated_commands = agent.command_generation_greedy_generation(observation_strings, triplets)
             triplets = agent.update_knowledge_graph_triplets(triplets, generated_commands)
             # choose what to do next from candidate list
-            chosen_actions, chosen_indices, _, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
+            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
             # send chosen actions to game engine
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
@@ -255,6 +255,91 @@ def evaluate_belief_mode(env, agent, num_games):
     return np.mean(achieved_game_points), np.mean(normalized_game_points), np.mean(total_game_steps), np.mean(total_command_generation_f1), print_strings
 
 
+def evaluate_rl_with_real_graphs(env, agent, num_games):
+
+    achieved_game_points = []
+    total_game_steps = []
+    game_name_list = []
+    game_max_score_list = []
+    game_id = 0
+    while(True):
+        if game_id >= num_games:
+            break
+        obs, infos = env.reset()
+        # filter look and examine actions
+        for commands_ in infos["admissible_commands"]:
+            for cmd_ in [cmd for cmd in commands_ if cmd != "examine cookbook" and cmd.split()[0] in ["examine", "look"]]:
+                commands_.remove(cmd_)
+        game_name_list += [game.metadata["uuid"].split("-")[-1] for game in infos["game"]]
+        game_max_score_list += [game.max_score for game in infos["game"]]
+        batch_size = len(obs)
+        agent.eval()
+        agent.init()
+
+        chosen_actions, prev_game_facts = [], []
+        prev_step_dones = []
+        prev_graph_hidden_state = torch.zeros(batch_size, agent.online_net.block_hidden_dim)
+        if agent.use_cuda:
+            prev_graph_hidden_state = prev_graph_hidden_state.cuda()
+        for _ in range(batch_size):
+            chosen_actions.append("restart")
+            prev_game_facts.append(set())
+            prev_step_dones.append(0.0)
+            
+        prev_h, prev_c = None, None
+        ########
+        ## remove for obs_gen
+        observation_strings, _, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=None, return_gt_commands=True)
+        ########
+        still_running_mask = []
+        final_scores = []
+
+        for step_no in range(agent.eval_max_nb_steps_per_episode):
+
+            new_adjacency_matrix, new_graph_hidden_state = agent.generate_adjacency_matrix_for_rl(observation_strings, chosen_actions, prev_graph_hidden_state)
+            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, new_adjacency_matrix, action_candidate_list, previous_h=prev_h, previous_c=prev_c)
+            # send chosen actions to game engine
+            chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
+            obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
+            # filter look and examine actions
+            for commands_ in infos["admissible_commands"]:
+                for cmd_ in [cmd for cmd in commands_ if cmd != "examine cookbook" and cmd.split()[0] in ["examine", "look"]]:
+                    commands_.remove(cmd_)
+            prev_graph_hidden_state = new_graph_hidden_state
+            prev_graph_hidden_state = prev_graph_hidden_state.detach()
+            prev_game_facts = current_game_facts
+            observation_strings, _, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=prev_game_facts, return_gt_commands=True)
+            chosen_actions_before_parsing = chosen_actions # for adj_for_mp 
+
+            still_running = [1.0 - float(item) for item in prev_step_dones]  # list of float
+            prev_step_dones = dones
+            final_scores = scores
+            still_running_mask.append(still_running)
+
+            # if all ended, break
+            if np.sum(still_running) == 0:
+                break
+
+        achieved_game_points += final_scores
+        still_running_mask = np.array(still_running_mask)
+        total_game_steps += np.sum(still_running_mask, 0).tolist()
+        game_id += batch_size
+
+    achieved_game_points = np.array(achieved_game_points, dtype="float32")
+    game_max_score_list = np.array(game_max_score_list, dtype="float32")
+    normalized_game_points = achieved_game_points / game_max_score_list
+
+    print_strings = []
+    print_strings.append("======================================================")
+    print_strings.append("EVAL: rewards: {:2.3f} | normalized reward: {:2.3f} | used steps: {:2.3f}".format(np.mean(achieved_game_points), np.mean(normalized_game_points), np.mean(total_game_steps)))
+    for i in range(len(game_name_list)):
+        print_strings.append("game name: {}, reward: {:2.3f}, normalized reward: {:2.3f}, steps: {:2.3f}".format(game_name_list[i], achieved_game_points[i], normalized_game_points[i], total_game_steps[i]))
+    print_strings.append("======================================================")
+    print_strings = "\n".join(print_strings)
+    print(print_strings)
+    return np.mean(achieved_game_points), np.mean(normalized_game_points), np.mean(total_game_steps), print_strings
+
+
 def evaluate_pretrained_command_generation(env, agent, valid_test="valid", verbose=False):
     env.split_reset(valid_test)
     agent.eval()
@@ -288,6 +373,95 @@ def evaluate_pretrained_command_generation(env, agent, valid_test="valid", verbo
         f.write("\n".join(to_print))
     print("Hard F1: ", np.mean(np.array(total_exact_f1)), "Soft F1:", np.mean(np.array(total_soft_f1)))
     return np.mean(np.array(total_exact_f1)), np.mean(np.array(total_soft_f1))
+
+
+def evaluate_observation_generation_free_generation(env, agent, valid_test="valid", verbose=False):
+    env.split_reset(valid_test)
+    agent.eval()
+    total_f1 = []
+    counter = 0
+    to_print = []
+
+    while(True):
+        observation_strings, prev_action_strings = env.get_batch()
+        target_strings = observation_strings
+        batch_size = len(observation_strings)
+        lens = [len(elem) for elem in observation_strings]
+        max_len = max(lens)
+        padded_observation_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in observation_strings]
+        padded_prev_action_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in prev_action_strings]
+        eps_masks = torch.zeros((batch_size, max_len), dtype=torch.float).cuda() if agent.use_cuda else torch.zeros((batch_size, max_len), dtype=torch.float)
+        for i in range(batch_size):
+            eps_masks[i, :lens[i]] = 1
+        prev_h = None
+        for j in range(max_len):
+            batch_obs_string = [elem[j] for elem in padded_observation_strings]
+            batch_prev_action_string = [elem[j] for elem in padded_prev_action_strings]
+            pred_strings, prev_h = agent.observation_generation_greedy_generation(batch_obs_string, batch_prev_action_string, eps_masks, prev_h)
+
+            for i in range(len(observation_strings)):
+                if eps_masks[i, j] == 0:
+                    continue # if masked eps then don't compute F1
+                _, _, f1 = get_match_result_obs_gen(pred_strings[i], batch_obs_string[i])
+                total_f1.append(f1)
+                if verbose:
+                    to_print.append(str(counter) + " -------------------------------------------- soft f1: " + str(f1))
+                    to_print.append("OBS: %s " % (observation_strings[i][j]))
+                    to_print.append("PRED: %s " % (pred_strings[i]))
+                    to_print.append("GT: %s " % (target_strings[i][j]))
+                    to_print.append("")
+                counter += 1
+        if env.batch_pointer == 0:
+            break
+    with open(agent.experiment_tag + "_output.txt", "w") as f:
+        f.write("\n".join(to_print))
+    return np.mean(np.array(total_f1))
+
+
+def evaluate_observation_generation_loss(env, agent, valid_test="valid"):
+    env.split_reset(valid_test)
+    agent.eval()
+    ave_loss = []
+
+    while(True):
+        observation_strings, prev_action_strings = env.get_batch()
+        batch_size = len(observation_strings)
+        lens = [len(elem) for elem in observation_strings]
+        max_len = max(lens)
+        padded_observation_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in observation_strings]
+        padded_prev_action_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in prev_action_strings]
+        eps_masks = torch.zeros((batch_size, max_len), dtype=torch.float).cuda() if agent.use_cuda else torch.zeros((batch_size, max_len), dtype=torch.float)
+        for i in range(batch_size):
+            eps_masks[i, :lens[i]] = 1
+
+        prev_h = None
+        for j in range(max_len):
+            batch_obs_string = [elem[j] for elem in padded_observation_strings]
+            batch_prev_action_string = [elem[j] for elem in padded_prev_action_strings]
+            with torch.no_grad():
+                loss, _, prev_h = agent.observation_generation_teacher_force(batch_obs_string, batch_prev_action_string, eps_masks[:, j], prev_h)
+            ave_loss.append(to_np(loss))
+        if env.batch_pointer == 0:
+            break
+    return np.mean(np.array(ave_loss))
+
+    
+def evaluate_observation_infomax(env, agent, valid_test="valid"):
+    env.split_reset(valid_test)
+    agent.eval()
+    total_valid_loss = []
+    total_valid_accuracy = []
+
+    while(True):
+        observation_strings, prev_action_strings = env.get_batch()
+        with torch.no_grad():
+            valid_loss, acc = agent.get_observation_infomax_loss(observation_strings, prev_action_strings, evaluate=True)
+        total_valid_loss = total_valid_loss + valid_loss
+        total_valid_accuracy = total_valid_accuracy + acc
+        if env.batch_pointer==0:
+            break
+
+    return np.mean(np.array(total_valid_loss)), np.mean(np.array(total_valid_accuracy))
 
 
 def evaluate_action_prediction(env, agent, valid_test="valid", verbose=False):

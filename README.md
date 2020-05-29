@@ -1,4 +1,4 @@
-# Learning Dynamic Knowledge Graphs to Generalize on Text-based Games
+# WIP, Please use the master branch
 ---------------------------------------------------------------------------
 Code for paper [Learning Dynamic Knowledge Graphs to Generalize on Text-based Games](https://arxiv.org/abs/2002.09127).
 
@@ -22,31 +22,35 @@ conda install pytorch torchvision cudatoolkit=9.2 -c pytorch
 wget "https://bit.ly/2U3Mde2"
 
 # Action Prediction
-cd ap.0.2 ; wget https://aka.ms/twkg/ap.0.2.zip ; unzip ap.0.2.zip ; cd ..
+cd ap.0.2 ; wget https://bit.ly/2v6nbC1 ; unzip ap.0.2.zip ; cd ..
 # Modify config.yaml
 python train_action_prediction.py
 
 # Deep Graph Infomax
-cd dgi.0.2 ; wget https://aka.ms/twkg/dgi.0.2.zip ; unzip dgi.0.2.zip ; cd ..
+cd dgi.0.2 ; wget https://bit.ly/383vAEQ ; unzip dgi.0.2.zip ; cd ..
 # Modify config.yaml
 python train_deep_graph_infomax.py
 
 # State Prediction
-cd sp.0.2 ; wget https://aka.ms/twkg/sp.0.2.zip ; unzip sp.0.2.zip ; cd ..
+cd sp.0.2 ; wget https://bit.ly/2Uyj9wS ; unzip sp.0.2.zip ; cd ..
 # Modify config.yaml
 python train_state_prediction.py
 
 # Command generation
-cd cmd_gen.0.2 ; wget https://aka.ms/twkg/cmd_gen.0.2.zip ; unzip cmd_gen.0.2.zip ; cd ..
+cd cmd_gen.0.2 ; wget https://bit.ly/385UVOC ; unzip cmd_gen.0.2.zip ; cd ..
 # Modify config.yaml
 python train_command_generation.py config.yaml
+
+# Observation generation / Contrastive observation classification
+cd obs_gen.0.1 ; wget https://bit.ly/3ep1yhI ; unzip obs_gen.0.1.zip ; cd ..
+# Modify config.yaml
 ```
 
 ## Training RL agents
 
 ```
 # Download games
-cd rl.0.1 ; wget https://aka.ms/twkg/rl.0.1.zip ; unzip rl.0.1.zip ; cd ..
+cd rl.0.2 ; wget https://bit.ly/2Mb4CBR ; unzip rl.0.2.zip ; cd ..
 
 # Modify config.yaml
 python train_rl.py config.yaml

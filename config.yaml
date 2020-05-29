@@ -1,36 +1,36 @@
 general:
-  task: "rl"  # cmd_gen, ap, sp, dgi, rl
+  task: "rl"  # obs_gen, obs_infomax, cmd_gen, ap, sp, dgi, rl
   random_seed: 42
   use_this_many_data: -1
   use_cuda: True  # disable this when running on machine without cuda
-  visdom: False  # Plot training curves using Visdom
+  visdom: False
 
   training:
-    batch_size: 1  # for ap/dgi, change this to 128, for sp, change this to 64, for RL, use 1
+    batch_size: 32  # for sp, change this to 64
     max_episode: 100000
     smoothing_eps: 0.1
     optimizer:
       step_rule: 'radam'  # adam, radam
       learning_rate: 0.001
       clip_grad_norm: 5
-      learning_rate_warmup_until: 0  # 1000
+      learning_rate_warmup_until:  1000
     fix_parameters_keywords: []  # ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
     patience: 3  # >=1 to enable
 
   evaluate:
     run_eval: True
     g_belief: False
-    batch_size: 1  # for ap/dgi, change this to 128, change this to 64, for RL, use 1
-    max_target_length: 100
+    batch_size: 256  # for sp, change this to 64
+    max_target_length: 200
 
   checkpoint:
-    report_frequency: 1000  # episode
+    report_frequency: 5000  # episode
     save_frequency: 1000  # episode
     experiment_tag: 'exp_tag'
     load_pretrained: False  # during test, enable this so that the agent load your pretrained model
     load_from_tag: 'pretrain_model'
     load_parameter_keywords: ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
-    load_graph_update_model_from_tag: 'graph_update_model_tag'
+    load_graph_generation_model_from_tag: 'graph_generation_model_tag'
 
   model:
     use_pretrained_embedding: True
@@ -49,6 +49,7 @@ general:
     gcn_hidden_dims: [64, 64, 64, 64, 64, 64]  # last one should equal to block hidden dim
     gcn_highway_connections: True
     gcn_num_bases: 3
+    real_valued_graph: True
     n_heads: 1
     dropout: 0.
     attention_dropout: 0.
@@ -57,6 +58,10 @@ general:
 # here are the 5 tasks
 cmd_gen:
   data_path: "cmd_gen.0.2"
+
+obs_gen:
+  data_path: "obs_gen.0.1"
+  backprop_frequency: 5 # time steps after which loss.backward() and step()
 
 ap:
   data_path: "ap.0.2"
@@ -75,10 +80,10 @@ dgi:
   sample_bias_negative: 0.0
 
 rl:
-  data_path: "rl.0.1"
+  data_path: "rl.0.2"
   difficulty_level: 1  # 1-10
   training_size: 20  # 1, 20, 100
-  fully_observable_graph: True  # use fully observable graph
+  fully_observable_graph: False  # use fully observable graph
 
   training:
     max_nb_steps_per_episode: 50  # after this many steps, a game is terminated
@@ -117,4 +122,4 @@ rl:
   model:
     enable_recurrent_memory: False
     enable_graph_input: True
-    enable_text_input: False
+    enable_text_input: True

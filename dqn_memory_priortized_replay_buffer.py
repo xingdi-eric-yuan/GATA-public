@@ -8,7 +8,7 @@ from segment_tree import SumSegmentTree, MinSegmentTree
 
 
 # a snapshot of state to be stored in replay memory
-Transition = namedtuple('Transition', ('observation_list', 'action_candidate_list', 'chosen_indices', 'graph_triplets', 'reward', 'graph_reward', 'count_reward', 'is_final'))
+Transition = namedtuple('Transition', ('observation_list', 'prev_action_list', 'action_candidate_list', 'chosen_indices', 'graph_triplets', 'reward', 'graph_reward', 'count_reward', 'is_final'))
 
 class PrioritizedReplayMemory(object):
 
@@ -105,11 +105,13 @@ class PrioritizedReplayMemory(object):
 
         # all good
         obs = self._storage[head].observation_list
+        prev_action = self._storage[head].prev_action_list
         candidate = self._storage[head].action_candidate_list
         chosen_indices = self._storage[head].chosen_indices
         graph_triplets = self._storage[head].graph_triplets
 
         next_obs = self._storage[head + n].observation_list
+        next_prev_action = self._storage[head + n].prev_action_list
         next_candidate = self._storage[head + n].action_candidate_list
         next_graph_triplets = self._storage[head + n].graph_triplets
 
@@ -124,11 +126,11 @@ class PrioritizedReplayMemory(object):
         count_rewards_up_to_next_final = [self.discount_gamma_count_reward ** i * self._storage[head + i].count_reward for i in range(tmp)]
         count_reward = torch.sum(torch.stack(count_rewards_up_to_next_final))
 
-        return (obs, candidate, chosen_indices, graph_triplets, reward + graph_reward + count_reward, next_obs, next_candidate, next_graph_triplets)
+        return (obs, prev_action, candidate, chosen_indices, graph_triplets, reward + graph_reward + count_reward, next_obs, next_prev_action, next_candidate, next_graph_triplets)
 
     def _encode_sample(self, idxes, ns):
         actual_indices, actual_ns = [], []
-        obs, candidate, chosen_indices, graph_triplets, reward, next_obs, next_candidate, next_graph_triplets = [], [], [], [], [], [], [], []
+        obs, prev_action, candidate, chosen_indices, graph_triplets, reward, next_obs, next_prev_action, next_candidate, next_graph_triplets = [], [], [], [], [], [], [], [], [], []
         for i, n in zip(idxes, ns):
             t = self._get_single_transition(i, n)
             if t is None:
@@ -136,20 +138,22 @@ class PrioritizedReplayMemory(object):
             actual_indices.append(i)
             actual_ns.append(n)
             obs.append(t[0])
-            candidate.append(t[1])
-            chosen_indices.append(t[2])
-            graph_triplets.append(t[3])
-            reward.append(t[4])
-            next_obs.append(t[5])
-            next_candidate.append(t[6])
-            next_graph_triplets.append(t[7])
+            prev_action.append(t[1])
+            candidate.append(t[2])
+            chosen_indices.append(t[3])
+            graph_triplets.append(t[4])
+            reward.append(t[5])
+            next_obs.append(t[6])
+            next_prev_action.append(t[7])
+            next_candidate.append(t[8])
+            next_graph_triplets.append(t[9])
         if len(actual_indices) == 0:
             return None
         chosen_indices = np.array(chosen_indices)  # batch
         reward = torch.stack(reward, 0)  # batch
         actual_ns = np.array(actual_ns)
 
-        return [obs, candidate, chosen_indices, graph_triplets, reward, next_obs, next_candidate, next_graph_triplets, actual_indices, actual_ns]
+        return [obs, prev_action, candidate, chosen_indices, graph_triplets, reward, next_obs, next_prev_action, next_candidate, next_graph_triplets, actual_indices, actual_ns]
 
     def sample(self, batch_size, beta=0, multi_step=1):
 
@@ -293,12 +297,15 @@ class PrioritizedReplayMemory(object):
         """
         assert len(idxes) == len(priorities)
         for idx, priority in zip(idxes, priorities):
-            assert priority > 0
-            assert 0 <= idx < len(self._storage)
-            self._it_sum[idx] = priority ** self._alpha
-            self._it_min[idx] = priority ** self._alpha
-
-            self._max_priority = max(self._max_priority, priority)
+            if priority > 0:
+                assert 0 <= idx < len(self._storage)
+                self._it_sum[idx] = priority ** self._alpha
+                self._it_min[idx] = priority ** self._alpha
+                self._max_priority = max(self._max_priority, priority)
+            else:
+                print("something wrong with priority: ", str(priority))
+                return False
+        return True
 
     def avg_rewards(self):
         if len(self._storage) == 0:

@@ -37,7 +37,6 @@ def train():
     output_dir = "."
     data_dir = "."
     json_file_name = agent.experiment_tag.replace(" ", "_")
-    ####best_eval_exact_f1_so_far, best_eval_soft_f1_so_far = 0.0, 0.0
     # load model from checkpoint
     if agent.load_pretrained:
         if os.path.exists(output_dir + "/" + agent.experiment_tag + "_model.pt"):
@@ -113,9 +112,9 @@ def train():
                             win=loss_win, update='append', name="eval loss")
                 else:
                     viz.line(X=[len(viz_loss) - 1], Y=[viz_loss[-1]],
-                                opts=dict(title=agent.experiment_tag + "_loss"),
-                                win=loss_win,
-                                update='append', name="training loss")
+                             opts=dict(title=agent.experiment_tag + "_loss"),
+                             win=loss_win,
+                             update='append', name="training loss")
                     viz.line(X=[len(viz_eval_loss) - 1], Y=[viz_eval_loss[-1]],
                             opts=dict(title=agent.experiment_tag + "_eval_loss"),
                             win=loss_win, update='append', name="eval loss")
@@ -126,9 +125,9 @@ def train():
                                             name="eval accuracy")
                 else:
                     viz.line(X=[len(viz_eval_acc) - 1], Y=[viz_eval_acc[-1]],
-                                opts=dict(title=agent.experiment_tag + "_eval_acc"),
-                                win=eval_acc_win,
-                                update='append', name="eval accuracy")
+                             opts=dict(title=agent.experiment_tag + "_eval_acc"),
+                             win=eval_acc_win,
+                             update='append', name="eval accuracy")
 
             # write accuracies down into file
             _s = json.dumps({"time spent": str(time_2 - time_1).rsplit(".")[0],

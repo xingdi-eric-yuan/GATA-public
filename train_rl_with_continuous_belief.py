@@ -7,6 +7,7 @@ import tempfile
 import numpy as np
 from os.path import join as pjoin
 from distutils.dir_util import copy_tree
+import torch
 
 from agent import Agent
 import generic
@@ -24,8 +25,8 @@ def train():
     data_dir = "."
 
     # make game environments
-    requested_infos = agent.select_additional_infos()
-
+    requested_infos = agent.select_additional_infos_lite()
+    requested_infos_eval = agent.select_additional_infos()
     games_dir = "./"
 
     # training game env
@@ -40,7 +41,7 @@ def train():
         # training game env
         eval_env, num_eval_game = reinforcement_learning_dataset.get_evaluation_game_env(games_dir + config['rl']['data_path'],
                                                                                          config['rl']['difficulty_level'],
-                                                                                         requested_infos,
+                                                                                         requested_infos_eval,
                                                                                          agent.eval_max_nb_steps_per_episode,
                                                                                          agent.eval_batch_size,
                                                                                          valid_or_test="valid")
@@ -72,18 +73,22 @@ def train():
     best_train_performance_so_far, best_eval_performance_so_far = 0.0, 0.0
     prev_performance = 0.0
 
-    if os.path.exists(data_dir + "/" + agent.load_graph_update_model_from_tag + ".pt"):
-        agent.load_pretrained_command_generation_model(data_dir + "/" + agent.load_graph_update_model_from_tag + ".pt")
+    if os.path.exists(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt"):
+        agent.load_pretrained_graph_generation_model(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt")
+    else:
+        print("No real-valued graph generation module detected... Please check ", data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt") 
+
     # load model from checkpoint
     if agent.load_pretrained:
         if os.path.exists(output_dir + "/" + agent.experiment_tag + "_model.pt"):
+            # this experiment itself (in case the experiment crashes for unknown reasons on server)
             agent.load_pretrained_model(output_dir + "/" + agent.experiment_tag + "_model.pt", load_partial_graph=False)
             agent.update_target_net()
         elif os.path.exists(data_dir + "/" + agent.load_from_tag + ".pt"):
+            # load from pre-trained graph encoder
             agent.load_pretrained_model(data_dir + "/" + agent.load_from_tag + ".pt")
             agent.update_target_net()
 
-    i_have_seen_these_states = EpisodicCountingMemory()  # episodic counting based memory
     i_am_patient = 0
     perfect_training = 0
     while(True):
@@ -103,22 +108,22 @@ def train():
 
         game_name_list = [game.metadata["uuid"].split("-")[-1] for game in infos["game"]]
         game_max_score_list = [game.max_score for game in infos["game"]]
-        i_have_seen_these_states.reset()  # reset episodic counting based memory
-        prev_triplets, chosen_actions, prev_game_facts = [], [], []
+        chosen_actions = []
         prev_step_dones, prev_rewards = [], []
+        prev_graph_hidden_state = torch.zeros(batch_size, agent.online_net.block_hidden_dim)
+        if agent.use_cuda:
+            prev_graph_hidden_state = prev_graph_hidden_state.cuda()
         for _ in range(batch_size):
-            prev_triplets.append([])
             chosen_actions.append("restart")
-            prev_game_facts.append(set())
             prev_step_dones.append(0.0)
             prev_rewards.append(0.0)
 
         prev_h, prev_c = None, None
+        episodes_masks = 1 - torch.tensor(prev_step_dones) # inverse of `prev_step_dones`
+        episodes_masks = episodes_masks.cuda() if agent.use_cuda else episodes_masks
 
-        observation_strings, current_triplets, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=None)
+        observation_strings, action_candidate_list = agent.get_game_info_at_certain_step_lite(obs, infos)
         observation_for_counting = copy.copy(observation_strings)
-        observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
-        i_have_seen_these_states.push(current_triplets)  # update init triplets into memory
 
         if agent.count_reward_lambda > 0:
             agent.reset_binarized_counter(batch_size)
@@ -136,25 +141,26 @@ def train():
         for step_no in range(agent.max_nb_steps_per_episode):
             if agent.noisy_net:
                 agent.reset_noise()  # Draw a new set of noisy weights
-            chosen_actions, chosen_indices, replay_info, prev_h, prev_c = agent.act(observation_strings, current_triplets, action_candidate_list, previous_h=prev_h, previous_c=prev_c, random=act_randomly)
+
+            # generate adj_matrices
+            new_adjacency_matrix, new_graph_hidden_state = agent.generate_adjacency_matrix_for_rl(observation_strings, chosen_actions, prev_graph_hidden_state)
+            new_chosen_actions, chosen_indices, prev_h, prev_c = agent.act(observation_strings, new_adjacency_matrix, action_candidate_list, previous_h=prev_h, previous_c=prev_c, random=act_randomly)
+            replay_info = [observation_strings, action_candidate_list, chosen_indices, generic.to_np(prev_graph_hidden_state), chosen_actions]
             transition_cache.append(replay_info)
+            chosen_actions = new_chosen_actions
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
             # filter look and examine actions
             for commands_ in infos["admissible_commands"]:
                 for cmd_ in [cmd for cmd in commands_ if cmd != "examine cookbook" and cmd.split()[0] in ["examine", "look"]]:
                     commands_.remove(cmd_)
-            prev_triplets = current_triplets
-            prev_game_facts = current_game_facts
-            observation_strings, current_triplets, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=prev_game_facts)
+            ## prev_triplets = current_triplets # commented for obs_gen
+            prev_graph_hidden_state = new_graph_hidden_state
+            observation_strings, action_candidate_list = agent.get_game_info_at_certain_step_lite(obs, infos)
             observation_for_counting = copy.copy(observation_strings)
-            observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
-            has_not_seen = i_have_seen_these_states.has_not_seen(current_triplets)
-            i_have_seen_these_states.push(current_triplets)  # update init triplets into memory
 
             if agent.noisy_net and step_in_total % agent.update_per_k_game_steps == 0:
                 agent.reset_noise()  # Draw a new set of noisy weights
-
             if episode_no >= agent.learn_start_from_this_episode and step_in_total % agent.update_per_k_game_steps == 0:
                 dqn_loss, _ = agent.update_dqn(episode_no)
                 if dqn_loss is not None:
@@ -173,11 +179,7 @@ def train():
                 step_rewards = [-1.0 if _lost else r for r, _lost in zip(step_rewards, infos["has_lost"])]  # list of float
                 step_rewards = [5.0 if _won else r for r, _won in zip(step_rewards, infos["has_won"])]  # list of float
             prev_rewards = scores
-            if agent.fully_observable_graph:
-                step_graph_rewards = [0.0 for _ in range(batch_size)]
-            else:
-                step_graph_rewards = agent.get_graph_rewards(prev_triplets, current_triplets)  # list of float
-                step_graph_rewards = [r * float(m) for r, m in zip (step_graph_rewards, has_not_seen)]
+            step_graph_rewards = [0.0 for _ in range(batch_size)] ## adding for obs_gen
             # counting bonus
             if agent.count_reward_lambda > 0:
                 step_revisit_counting_rewards = agent.get_binarized_count(observation_for_counting, update=True)
@@ -222,16 +224,16 @@ def train():
             if np.mean(tmp_game_rewards) < avg_rewards_in_buffer * agent.buffer_reward_threshold:
                 continue
             for i in range(game_rewards_np.shape[0]):
-                observation_strings, _triplets, action_candidate_list, chosen_indices = transition_cache[i]
+                observation_strings, action_candidate_list, chosen_indices, graph_hidden_state, prev_action_strings = transition_cache[i]
                 is_final = True
                 if still_running_mask_np[i][b] != 0:
                     is_final = False
-                agent.dqn_memory.add(observation_strings[b], action_candidate_list[b], chosen_indices[b], _triplets[b], command_rewards_pt[i][b], graph_rewards_pt[i][b], count_rewards_pt[i][b], is_final)
+                agent.dqn_memory.add(observation_strings[b], prev_action_strings[b], action_candidate_list[b], chosen_indices[b], graph_hidden_state[b], command_rewards_pt[i][b], graph_rewards_pt[i][b], count_rewards_pt[i][b], is_final)
                 if still_running_mask_np[i][b] == 0:
                     break
             if _need_pad:
-                observation_strings, _triplets, action_candidate_list, chosen_indices = transition_cache[-1]
-                agent.dqn_memory.add(observation_strings[b], action_candidate_list[b], chosen_indices[b], _triplets[b], command_rewards_pt[-1][b] * 0.0, graph_rewards_pt[-1][b] * 0.0, count_rewards_pt[-1][b] * 0.0, True)
+                observation_strings, action_candidate_list, chosen_indices, graph_hidden_state, prev_action_strings = transition_cache[-1]
+                agent.dqn_memory.add(observation_strings[b], prev_action_strings[b], action_candidate_list[b], chosen_indices[b], graph_hidden_state[b], command_rewards_pt[-1][b] * 0.0, graph_rewards_pt[-1][b] * 0.0, count_rewards_pt[-1][b] * 0.0, True)
 
         for b in range(batch_size):
             running_avg_game_points.push(np.sum(game_points_np, 0)[b])
@@ -258,7 +260,7 @@ def train():
         curr_train_performance = running_avg_game_points_normalized.get_avg()
         eval_game_points, eval_game_points_normalized, eval_game_step = 0.0, 0.0, 0.0
         if agent.run_eval:
-            eval_game_points, eval_game_points_normalized, eval_game_step, _, detailed_scores = evaluate.evaluate(eval_env, agent, num_eval_game)
+            eval_game_points, eval_game_points_normalized, eval_game_step, detailed_scores = evaluate.evaluate_rl_with_real_graphs(eval_env, agent, num_eval_game)
             curr_eval_performance = eval_game_points_normalized
             curr_performance = curr_eval_performance
             if curr_eval_performance > best_eval_performance_so_far:
@@ -315,88 +317,88 @@ def train():
 
             if reward_win is None:
                 reward_win = viz.line(X=viz_x, Y=viz_game_rewards,
-                                    opts=dict(title=agent.experiment_tag + "_game_rewards"),
-                                    name="game_rewards")
+                                   opts=dict(title=agent.experiment_tag + "_game_rewards"),
+                                   name="game_rewards")
                 viz.line(X=viz_x, Y=viz_graph_rewards,
-                            opts=dict(title=agent.experiment_tag + "_graph_rewards"),
-                            win=reward_win, update='append', name="graph_rewards")
+                         opts=dict(title=agent.experiment_tag + "_graph_rewards"),
+                         win=reward_win, update='append', name="graph_rewards")
                 viz.line(X=viz_x, Y=viz_count_rewards,
-                            opts=dict(title=agent.experiment_tag + "_count_rewards"),
-                            win=reward_win, update='append', name="count_rewards")
+                         opts=dict(title=agent.experiment_tag + "_count_rewards"),
+                         win=reward_win, update='append', name="count_rewards")
                 viz.line(X=viz_x, Y=viz_game_points,
-                            opts=dict(title=agent.experiment_tag + "_game_points"),
-                            win=reward_win, update='append', name="game_points")
+                         opts=dict(title=agent.experiment_tag + "_game_points"),
+                         win=reward_win, update='append', name="game_points")
                 viz.line(X=viz_x, Y=viz_game_points_normalized,
-                            opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
-                            win=reward_win, update='append', name="game_points_normalized")
+                         opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
+                         win=reward_win, update='append', name="game_points_normalized")
             else:
                 viz.line(X=[len(viz_game_rewards) - 1], Y=[viz_game_rewards[-1]],
-                            opts=dict(title=agent.experiment_tag + "_game_rewards"),
-                            win=reward_win,
-                            update='append', name="game_rewards")
+                         opts=dict(title=agent.experiment_tag + "_game_rewards"),
+                         win=reward_win,
+                         update='append', name="game_rewards")
                 viz.line(X=[len(viz_graph_rewards) - 1], Y=[viz_graph_rewards[-1]],
-                            opts=dict(title=agent.experiment_tag + "_graph_rewards"),
-                            win=reward_win,
-                            update='append', name="graph_rewards")
+                         opts=dict(title=agent.experiment_tag + "_graph_rewards"),
+                         win=reward_win,
+                         update='append', name="graph_rewards")
                 viz.line(X=[len(viz_count_rewards) - 1], Y=[viz_count_rewards[-1]],
-                            opts=dict(title=agent.experiment_tag + "_count_rewards"),
-                            win=reward_win,
-                            update='append', name="count_rewards")
+                         opts=dict(title=agent.experiment_tag + "_count_rewards"),
+                         win=reward_win,
+                         update='append', name="count_rewards")
                 viz.line(X=[len(viz_game_points) - 1], Y=[viz_game_points[-1]],
-                            opts=dict(title=agent.experiment_tag + "_game_points"),
-                            win=reward_win,
-                            update='append', name="game_points")
+                         opts=dict(title=agent.experiment_tag + "_game_points"),
+                         win=reward_win,
+                         update='append', name="game_points")
                 viz.line(X=[len(viz_game_points_normalized) - 1], Y=[viz_game_points_normalized[-1]],
-                            opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
-                            win=reward_win,
-                            update='append', name="game_points_normalized")
+                         opts=dict(title=agent.experiment_tag + "_game_points_normalized"),
+                         win=reward_win,
+                         update='append', name="game_points_normalized")
 
             if step_win is None:
                 step_win = viz.line(X=viz_x, Y=viz_step,
-                                    opts=dict(title=agent.experiment_tag + "_step"),
-                                    name="step")
+                                   opts=dict(title=agent.experiment_tag + "_step"),
+                                   name="step")
             else:
                 viz.line(X=[len(viz_step) - 1], Y=[viz_step[-1]],
-                            opts=dict(title=agent.experiment_tag + "_step"),
-                            win=step_win,
-                            update='append', name="step")
+                         opts=dict(title=agent.experiment_tag + "_step"),
+                         win=step_win,
+                         update='append', name="step")
 
             if dqn_loss_win is None:
                 dqn_loss_win = viz.line(X=viz_x, Y=viz_dqn_loss,
-                                    opts=dict(title=agent.experiment_tag + "_dqn_loss"),
-                                    name="dqn loss")
+                                   opts=dict(title=agent.experiment_tag + "_dqn_loss"),
+                                   name="dqn loss")
             else:
                 viz.line(X=[len(viz_dqn_loss) - 1], Y=[viz_dqn_loss[-1]],
-                            opts=dict(title=agent.experiment_tag + "_dqn_loss"),
-                            win=dqn_loss_win,
-                            update='append', name="dqn loss")
+                         opts=dict(title=agent.experiment_tag + "_dqn_loss"),
+                         win=dqn_loss_win,
+                         update='append', name="dqn loss")
 
             if eval_game_points_win is None:
                 eval_game_points_win = viz.line(X=viz_x, Y=viz_eval_game_points,
-                                    opts=dict(title=agent.experiment_tag + "_eval_game_points"),
-                                    name="eval game points")
+                                   opts=dict(title=agent.experiment_tag + "_eval_game_points"),
+                                   name="eval game points")
                 viz.line(X=viz_x, Y=viz_eval_game_points_normalized,
-                            opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
-                            win=eval_game_points_win, update='append', name="eval_game_points_normalized")
+                         opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
+                         win=eval_game_points_win, update='append', name="eval_game_points_normalized")
             else:
                 viz.line(X=[len(viz_eval_game_points) - 1], Y=[viz_eval_game_points[-1]],
-                            opts=dict(title=agent.experiment_tag + "_eval_game_points"),
-                            win=eval_game_points_win,
-                            update='append', name="eval game_points")
+                         opts=dict(title=agent.experiment_tag + "_eval_game_points"),
+                         win=eval_game_points_win,
+                         update='append', name="eval game_points")
                 viz.line(X=[len(viz_eval_game_points_normalized) - 1], Y=[viz_eval_game_points_normalized[-1]],
-                            opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
-                            win=eval_game_points_win,
-                            update='append', name="eval_game_points_normalized")
+                         opts=dict(title=agent.experiment_tag + "_eval_game_points_normalized"),
+                         win=eval_game_points_win,
+                         update='append', name="eval_game_points_normalized")
 
             if eval_step_win is None:
                 eval_step_win = viz.line(X=viz_x, Y=viz_eval_step,
-                                    opts=dict(title=agent.experiment_tag + "_eval_step"),
-                                    name="eval step")
+                                   opts=dict(title=agent.experiment_tag + "_eval_step"),
+                                   name="eval step")
             else:
                 viz.line(X=[len(viz_eval_step) - 1], Y=[viz_eval_step[-1]],
-                            opts=dict(title=agent.experiment_tag + "_eval_step"),
-                            win=eval_step_win,
-                            update='append', name="eval step")
+                         opts=dict(title=agent.experiment_tag + "_eval_step"),
+                         win=eval_step_win,
+                         update='append', name="eval step")
 
         # write accuracies down into file
         _s = json.dumps({"time spent": str(time_2 - time_1).rsplit(".")[0],

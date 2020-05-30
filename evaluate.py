@@ -207,7 +207,7 @@ def evaluate_belief_mode(env, agent, num_games):
             generated_commands = agent.command_generation_greedy_generation(observation_strings, triplets)
             triplets = agent.update_knowledge_graph_triplets(triplets, generated_commands)
             # choose what to do next from candidate list
-            chosen_actions, chosen_indices, _, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
+            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
             # send chosen actions to game engine
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)

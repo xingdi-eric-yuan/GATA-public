@@ -1,0 +1,125 @@
+general:
+  task: "rl"  # obs_gen, obs_infomax, cmd_gen, ap, sp, dgi, rl
+  random_seed: 42
+  use_this_many_data: -1
+  use_cuda: True  # disable this when running on machine without cuda
+  visdom: True
+
+  training:
+    batch_size: 25
+    max_episode: 100000
+    smoothing_eps: 0.1
+    optimizer:
+      step_rule: 'radam'  # adam, radam
+      learning_rate: 0.001
+      clip_grad_norm: 5
+      learning_rate_warmup_until:  1000
+    fix_parameters_keywords: []  # ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
+    patience: 3  # >=1 to enable
+
+  evaluate:
+    run_eval: True
+    g_belief: True
+    batch_size: 20  # for sp, change this to 64
+    max_target_length: 200
+
+  checkpoint:
+    report_frequency: 1000  # episode
+    save_frequency: 1000  # episode
+    experiment_tag: 'gata_gtp_rl'
+    load_pretrained: False  # during test, enable this so that the agent load your pretrained model
+    load_from_tag: 'not loading anything'  # to switch pre-trained graph updater, change this to gata_pretrain_obs_infomax_model
+    load_parameter_keywords: ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
+    load_graph_generation_model_from_tag: 'gata_gtp_pretrain_cmd_gen_model'
+
+  model:
+    use_pretrained_embedding: True
+    word_embedding_size: 300
+    word_embedding_trainable: False
+    node_embedding_size: 100
+    node_embedding_trainable: True
+    relation_embedding_size: 32
+    relation_embedding_trainable: True
+    embedding_dropout: 0.
+    encoder_layers: 1
+    decoder_layers: 1
+    action_scorer_layers: 1
+    encoder_conv_num: 5
+    block_hidden_dim: 64
+    gcn_hidden_dims: [64, 64, 64, 64, 64, 64]  # last one should equal to block hidden dim
+    gcn_highway_connections: True
+    gcn_num_bases: 3
+    real_valued_graph: True
+    n_heads: 1
+    dropout: 0.
+    attention_dropout: 0.
+    block_dropout: 0.
+
+# here are the 5 tasks
+cmd_gen:
+  data_path: "cmd_gen.0.2"
+
+obs_gen:
+  data_path: "obs_gen.0.1"
+  backprop_frequency: 5 # time steps after which loss.backward() and step()
+
+ap:
+  data_path: "ap.0.2"
+  graph_type: "full"  # full, seen
+  k_way_classification: -1  # -1 means all
+
+sp:
+  data_path: "sp.0.2"
+  graph_type: "full"  # full, seen
+  k_way_classification: -1  # -1 means all
+
+dgi:
+  data_path: "dgi.0.2"
+  graph_type: "full"  # full, seen
+  sample_bias_positive: 0.0
+  sample_bias_negative: 0.0
+
+rl:
+  data_path: "rl.0.2"
+  difficulty_level: 1  # 1-10
+  training_size: 20  # 1, 20, 100
+  fully_observable_graph: False  # use fully observable graph
+
+  training:
+    max_nb_steps_per_episode: 50  # after this many steps, a game is terminated
+    learn_start_from_this_episode: 100
+    target_net_update_frequency: 500  # sync target net with online net per this many epochs
+    use_negative_reward: False
+
+  evaluate:
+    max_nb_steps_per_episode: 100
+
+  replay:
+    buffer_reward_threshold: 0.1  # a new sequence of transitions has to be k times better than average rewards in current replay buffer. Use -1 to disable.
+    accumulate_reward_from_final: False
+    prioritized_replay_beta: 0.4
+    prioritized_replay_eps: 0.000001
+    count_reward_lambda: 0.0  # 0 to disable
+    graph_reward_lambda: 0.0  # 0 to disable
+    graph_reward_type: "triplets_difference"  # triplets_difference, triplets_increased
+    discount_gamma_graph_reward: 0.9
+    discount_gamma_count_reward: 0.5
+    discount_gamma_game_reward: 0.9
+    replay_memory_capacity: 500000  # adjust this depending on your RAM size
+    replay_memory_priority_fraction: 0.6
+    update_per_k_game_steps: 50
+    replay_batch_size: 64
+    multi_step: 3
+    replay_sample_history_length: 8
+    replay_sample_update_from: 4
+
+  epsilon_greedy:
+    noisy_net: False  # if this is true, then epsilon greedy is disabled
+    epsilon_anneal_episodes: 20000  # -1 if not annealing
+    epsilon_anneal_from: 1.0
+    epsilon_anneal_to: 0.1
+
+  model:
+    enable_recurrent_memory: False
+    enable_graph_input: True
+    enable_text_input: True

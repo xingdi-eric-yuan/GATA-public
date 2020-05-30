@@ -14,50 +14,144 @@ pip install -U spacy
 python -m spacy download en
 pip install tqdm pipreqs h5py pyyaml visdom
 conda install pytorch torchvision cudatoolkit=9.2 -c pytorch
-```
 
-## Pretraining Action Prediction / State Prediction / Deep Graph Infomax / Command Generation
-```
-# Word embeddings
+# Download FastText Word Embeddings
 wget "https://bit.ly/2U3Mde2"
-
-# Action Prediction
-cd ap.0.2 ; wget https://bit.ly/2v6nbC1 ; unzip ap.0.2.zip ; cd ..
-# Modify config.yaml
-python train_action_prediction.py
-
-# Deep Graph Infomax
-cd dgi.0.2 ; wget https://bit.ly/383vAEQ ; unzip dgi.0.2.zip ; cd ..
-# Modify config.yaml
-python train_deep_graph_infomax.py
-
-# State Prediction
-cd sp.0.2 ; wget https://bit.ly/2Uyj9wS ; unzip sp.0.2.zip ; cd ..
-# Modify config.yaml
-python train_state_prediction.py
-
-# Command generation
-cd cmd_gen.0.2 ; wget https://bit.ly/385UVOC ; unzip cmd_gen.0.2.zip ; cd ..
-# Modify config.yaml
-python train_command_generation.py config.yaml
-
-# Observation generation / Contrastive observation classification
-cd obs_gen.0.1 ; wget https://bit.ly/3ep1yhI ; unzip obs_gen.0.1.zip ; cd ..
-# Modify config.yaml
 ```
 
-## Training RL agents
+## GATA
+### Pre-training Graph Updater by Observation Generation
+```
+# Download data for observation generation / contrastive observation classification
+cd obs_gen.0.1 ; wget https://bit.ly/3ep1yhI ; unzip obs_gen.0.1.zip ; cd ..
+# Train
+python train_obs_generation.py configs/pretrain_observation_generation.yaml
 
+```
+
+### Pre-training Graph Updater by Contrastive Observation Classification
+```
+# Download data for observation generation / contrastive observation classification
+cd obs_gen.0.1 ; wget https://bit.ly/3ep1yhI ; unzip obs_gen.0.1.zip ; cd ..
+# Train
+python train_obs_infomax.py configs/pretrain_contrastive_observation_classification.yaml
+
+```
+
+### Train Action Scorer with RL
 ```
 # Download games
 cd rl.0.2 ; wget https://bit.ly/2Mb4CBR ; unzip rl.0.2.zip ; cd ..
+# Modify configs/train_gata_rl.yaml
+#   L30: True to load pre-trained graph encoder, False to randomly initialize.
+#     L31:  'gata_pretrain_obs_gen_model', 'gata_pretrain_obs_infomax_model'. When L30 is True.
+#   L33:  'gata_pretrain_obs_gen_model' or 'gata_pretrain_obs_infomax_model'
+#   L84:  3/7/5/9 correspond to the 1/2/3/4 in paper
+#   L85:  1/20/100
+#   L125: False/True
+# To train
+python train_rl_with_continuous_belief.py configs/train_gata_rl.yaml
 
-# Modify config.yaml
-python train_rl.py config.yaml
 ```
 
+## GATA-GTF
+### Pre-training Graph Encoder by Action Prediction
+```
+# Download data
+cd ap.0.2 ; wget https://bit.ly/2v6nbC1 ; unzip ap.0.2.zip ; cd ..
+# Train
+python train_action_prediction.py configs/pretrain_action_prediction_full.yaml
+
+```
+
+### Pre-training Graph Encoder by State Prediction
+```
+# Download data
+cd sp.0.2 ; wget https://bit.ly/2Uyj9wS ; unzip sp.0.2.zip ; cd ..
+# Train
+python train_state_prediction.py configs/pretrain_state_prediction_full.yaml
+
+```
+
+### Pre-training Graph Encoder by Deep Graph Infomax
+```
+# Download data
+cd dgi.0.2 ; wget https://bit.ly/383vAEQ ; unzip dgi.0.2.zip ; cd ..
+# Train
+python train_deep_graph_infomax.py configs/pretrain_deep_graph_infomax_full.yaml
+
+```
+
+### Train Action Scorer with RL
+```
+# Download games
+cd rl.0.2 ; wget https://bit.ly/2Mb4CBR ; unzip rl.0.2.zip ; cd ..
+# Modify configs/train_gata_gtf_rl.yaml
+#   L30: True to load pre-trained graph encoder, False to randomly initialize.
+#     L31:  'gata_gtf_pretrain_ap_full_model', 'gata_gtf_pretrain_sp_full_model', or 'gata_gtf_pretrain_dgi_full_model'. When L30 is True.
+#   L84:  3/7/5/9 correspond to the 1/2/3/4 in paper
+#   L85:  1/20/100
+#   L125: False/True
+# To train
+python train_rl_with_ground_truth_discrete_belief.py configs/train_gata_gtf_rl.yaml
+
+```
+
+## GATA-GTP
+### Pre-training Graph Encoder by Action Prediction
+```
+# Download data
+cd ap.0.2 ; wget https://bit.ly/2v6nbC1 ; unzip ap.0.2.zip ; cd ..
+# Train
+python train_action_prediction.py configs/pretrain_action_prediction_seen.yaml
+
+```
+
+### Pre-training Graph Encoder by State Prediction
+```
+# Download data
+cd sp.0.2 ; wget https://bit.ly/2Uyj9wS ; unzip sp.0.2.zip ; cd ..
+# Train
+python train_state_prediction.py configs/pretrain_state_prediction_seen.yaml
+
+```
+
+### Pre-training Graph Encoder by Deep Graph Infomax
+```
+# Download data
+cd dgi.0.2 ; wget https://bit.ly/383vAEQ ; unzip dgi.0.2.zip ; cd ..
+# Train
+python train_deep_graph_infomax.py configs/pretrain_deep_graph_infomax_seen.yaml
+
+```
+
+### Pre-training Graph Updater by Command Generation
+```
+# Download data for command generation
+cd cmd_gen.0.2 ; wget https://bit.ly/385UVOC ; unzip cmd_gen.0.2.zip ; cd ..
+# Train
+python train_command_generation.py configs/pretrain_command_generation.yaml
+
+```
+
+### Train Action Scorer with RL
+```
+# Download games
+cd rl.0.2 ; wget https://bit.ly/2Mb4CBR ; unzip rl.0.2.zip ; cd ..
+# Modify configs/train_gata_gtp_rl.yaml
+#   L30: True to load pre-trained graph encoder, False to randomly initialize.
+#     L31:  'gata_gtp_pretrain_ap_seen_model', 'gata_gtp_pretrain_sp_seen_model', or 'gata_gtp_pretrain_dgi_seen_model'. When L30 is True.
+#   L84:  3/7/5/9 correspond to the 1/2/3/4 in paper
+#   L85:  1/20/100
+#   L125: False/True
+# To train
+python train_rl_with_discrete_belief.py configs/train_gata_gtp_rl.yaml
+
+```
+
+
 ### Monitoring training progress
-To monitor training progress: set "`visdom: True`" in `config.yaml` under the `general` section, and start [Visdom](https://github.com/facebookresearch/visdom) in another terminal using the `visdom` command line. Then, open the link displayed by Visdom in your browser.
+To monitor training progress: set "`visdom: True`" in `config_***.yaml` under the `general` section, and start [Visdom](https://github.com/facebookresearch/visdom) in another terminal using the `visdom` command line. Then, open the link displayed by Visdom in your browser.
 
 
 ## Citation

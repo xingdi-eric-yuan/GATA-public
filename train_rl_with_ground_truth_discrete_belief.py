@@ -24,8 +24,7 @@ def train():
     data_dir = "."
 
     # make game environments
-    requested_infos = agent.select_additional_infos_lite()
-    requested_infos_eval = agent.select_additional_infos()
+    requested_infos = agent.select_additional_infos()
     games_dir = "./"
 
     # training game env
@@ -40,7 +39,7 @@ def train():
         # training game env
         eval_env, num_eval_game = reinforcement_learning_dataset.get_evaluation_game_env(games_dir + config['rl']['data_path'],
                                                                                          config['rl']['difficulty_level'],
-                                                                                         requested_infos_eval,
+                                                                                         requested_infos,
                                                                                          agent.eval_max_nb_steps_per_episode,
                                                                                          agent.eval_batch_size,
                                                                                          valid_or_test="valid")
@@ -74,9 +73,6 @@ def train():
 
     if os.path.exists(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt"):
         agent.load_pretrained_graph_generation_model(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt")
-    else:
-        print("No graph updater module detected... Please check ", data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt") 
-
     # load model from checkpoint
     if agent.load_pretrained:
         if os.path.exists(output_dir + "/" + agent.experiment_tag + "_model.pt"):
@@ -107,23 +103,20 @@ def train():
         game_name_list = [game.metadata["uuid"].split("-")[-1] for game in infos["game"]]
         game_max_score_list = [game.max_score for game in infos["game"]]
         i_have_seen_these_states.reset()  # reset episodic counting based memory
-        prev_triplets, chosen_actions = [], []
+        prev_triplets, chosen_actions, prev_game_facts = [], [], []
         prev_step_dones, prev_rewards = [], []
         for _ in range(batch_size):
             prev_triplets.append([])
             chosen_actions.append("restart")
+            prev_game_facts.append(set())
             prev_step_dones.append(0.0)
             prev_rewards.append(0.0)
 
         prev_h, prev_c = None, None
 
-        observation_strings, action_candidate_list = agent.get_game_info_at_certain_step_lite(obs, infos)
+        observation_strings, current_triplets, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=None)
         observation_for_counting = copy.copy(observation_strings)
         observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
-        # generate g_belief begins
-        generated_commands = agent.command_generation_greedy_generation(observation_strings, prev_triplets)
-        current_triplets = agent.update_knowledge_graph_triplets(prev_triplets, generated_commands)
-        # generate g_belief ends
         i_have_seen_these_states.push(current_triplets)  # update init triplets into memory
         
         if agent.count_reward_lambda > 0:
@@ -142,7 +135,6 @@ def train():
         for step_no in range(agent.max_nb_steps_per_episode):
             if agent.noisy_net:
                 agent.reset_noise()  # Draw a new set of noisy weights
-
             new_chosen_actions, chosen_indices, prev_h, prev_c = agent.act(observation_strings, current_triplets, action_candidate_list, previous_h=prev_h, previous_c=prev_c, random=act_randomly)
             replay_info = [observation_strings, action_candidate_list, chosen_indices, current_triplets, chosen_actions]
             transition_cache.append(replay_info)
@@ -154,13 +146,10 @@ def train():
                 for cmd_ in [cmd for cmd in commands_ if cmd != "examine cookbook" and cmd.split()[0] in ["examine", "look"]]:
                     commands_.remove(cmd_)
             prev_triplets = current_triplets
-            observation_strings, action_candidate_list = agent.get_game_info_at_certain_step_lite(obs, infos)
+            prev_game_facts = current_game_facts
+            observation_strings, current_triplets, action_candidate_list, _, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=prev_game_facts)
             observation_for_counting = copy.copy(observation_strings)
             observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
-            # generate g_belief begins
-            generated_commands = agent.command_generation_greedy_generation(observation_strings, prev_triplets)
-            current_triplets = agent.update_knowledge_graph_triplets(prev_triplets, generated_commands)
-            # generate g_belief ends
             has_not_seen = i_have_seen_these_states.has_not_seen(current_triplets)
             i_have_seen_these_states.push(current_triplets)  # update init triplets into memory
 
@@ -269,9 +258,8 @@ def train():
         # evaluate
         curr_train_performance = running_avg_game_points_normalized.get_avg()
         eval_game_points, eval_game_points_normalized, eval_game_step = 0.0, 0.0, 0.0
-        eval_command_generation_f1 = 0.0
         if agent.run_eval:
-            eval_game_points, eval_game_points_normalized, eval_game_step, eval_command_generation_f1, detailed_scores = evaluate.evaluate_belief_mode(eval_env, agent, num_eval_game)
+            eval_game_points, eval_game_points_normalized, eval_game_step, _, detailed_scores = evaluate.evaluate(eval_env, agent, num_eval_game)
             curr_eval_performance = eval_game_points_normalized
             curr_performance = curr_eval_performance
             if curr_eval_performance > best_eval_performance_so_far:
@@ -422,7 +410,6 @@ def train():
                          "train steps": str(running_avg_game_steps.get_avg()),
                          "eval game points": str(eval_game_points),
                          "eval normalized game points": str(eval_game_points_normalized),
-                         "eval command generation f1": str(eval_command_generation_f1),
                          "eval steps": str(eval_game_step),
                          "detailed scores": detailed_scores})
         with open(output_dir + "/" + json_file_name + '.json', 'a+') as outfile:

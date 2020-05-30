@@ -207,7 +207,7 @@ def evaluate_belief_mode(env, agent, num_games):
             generated_commands = agent.command_generation_greedy_generation(observation_strings, triplets)
             triplets = agent.update_knowledge_graph_triplets(triplets, generated_commands)
             # choose what to do next from candidate list
-            chosen_actions, chosen_indices, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
+            chosen_actions, chosen_indices, _, prev_h, prev_c = agent.act_greedy(observation_strings, triplets, action_candidate_list, prev_h, prev_c)
             # send chosen actions to game engine
             chosen_actions_before_parsing =  [item[idx] for item, idx in zip(infos["admissible_commands"], chosen_indices)]
             obs, scores, dones, infos = env.step(chosen_actions_before_parsing)
@@ -216,8 +216,11 @@ def evaluate_belief_mode(env, agent, num_games):
                 for cmd_ in [cmd for cmd in commands_ if cmd != "examine cookbook" and cmd.split()[0] in ["examine", "look"]]:
                     commands_.remove(cmd_)
 
+            still_running = [1.0 - float(item) for item in prev_step_dones]  # list of float
             # eval command generation
             for i in range(batch_size):
+                if still_running[i] == 0:
+                    continue
                 _, _, exact_f1 = get_match_result(generated_commands[i], target_command_strings[i], type='exact')
                 avg_command_generation_f1_in_a_game[i].append(exact_f1)
 
@@ -225,7 +228,6 @@ def evaluate_belief_mode(env, agent, num_games):
             observation_strings, _, action_candidate_list, target_command_strings, current_game_facts = agent.get_game_info_at_certain_step(obs, infos, prev_actions=chosen_actions, prev_facts=prev_game_facts, return_gt_commands=True)
             observation_strings = [item + " <sep> " + a for item, a in zip(observation_strings, chosen_actions)]
 
-            still_running = [1.0 - float(item) for item in prev_step_dones]  # list of float
             prev_step_dones = dones
             final_scores = scores
             still_running_mask.append(still_running)
@@ -237,7 +239,7 @@ def evaluate_belief_mode(env, agent, num_games):
         achieved_game_points += final_scores
         still_running_mask = np.array(still_running_mask)
         total_game_steps += np.sum(still_running_mask, 0).tolist()
-        total_command_generation_f1 += np.mean(avg_command_generation_f1_in_a_game, 1).tolist()
+        total_command_generation_f1 += [np.mean(item) for item in avg_command_generation_f1_in_a_game]
         game_id += batch_size
 
     achieved_game_points = np.array(achieved_game_points, dtype="float32")

@@ -254,10 +254,6 @@ def exists_triplet(triplets, arg1, arg2, relation):
            arg2 in [t[1], "*"] and\
            relation in [t[2], "*"]:
            return i
-        elif arg2 in [t[0], "*"] and\
-             arg1 in [t[1], "*"] and\
-             relation in [t[2], "*"]:
-           return i
     return None
 
 

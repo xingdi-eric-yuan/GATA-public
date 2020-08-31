@@ -159,7 +159,7 @@ To monitor training progress: set "`visdom: True`" in `config_***.yaml` under th
 Please use the following bibtex entry:
 ```
 @article{adhikari2020gata,
-  title={Learning Dynamic Knowledge Graphs to Generalize on Text-based Games},
+  title={Learning Dynamic Belief Graphs to Generalize on Text-Based Games},
   author={Adhikari, Ashutosh and Yuan, Xingdi and C\^ot\'{e}, Marc-Alexandre and Zelinka, Mikul\'{a}\v{s} and Rondeau, Marc-Antoine and Laroche, Romain and Poupart, Pascal and Tang, Jian and Trischler, Adam and Hamilton, William L.},
   journal={CoRR},
   volume={abs/2002.09127},

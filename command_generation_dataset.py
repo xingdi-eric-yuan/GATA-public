@@ -7,10 +7,6 @@ import numpy as np
 import gym
 
 from generic import sort_target_commands
-# from generic import process_equivalent_entities_in_triplet, process_equivalent_entities_in_command
-# from generic import process_burning_triplets, process_burning_commands, process_direction_triplets, process_direction_commands, arguments_swap
-# from generic import process_exits_in_triplet
-# from generic import two_args_relations, one_arg_state_relations, ignore_relations
 from graph_dataset import GraphDataset
 
 
@@ -68,7 +64,6 @@ class CommandGenerationData(gym.Env):
 
     def read_config(self):
         self.data_path = self.config["cmd_gen"]["data_path"]
-
         self.random_seed = self.config["general"]["random_seed"]
         self.use_this_many_data = self.config["general"]["use_this_many_data"]
 

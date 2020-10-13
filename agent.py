@@ -32,20 +32,19 @@ class Agent:
 
         if self.task == "rl":
             self.target_net = KG_Manipulation(config=self.config, word_vocab=self.word_vocab, node_vocab=self.node_vocab, relation_vocab=self.relation_vocab)
-            self.pretrained_cmd_gen_net = KG_Manipulation(config=self.config, word_vocab=self.word_vocab, node_vocab=self.node_vocab, relation_vocab=self.relation_vocab)
+            self.pretrained_graph_generation_net = KG_Manipulation(config=self.config, word_vocab=self.word_vocab, node_vocab=self.node_vocab, relation_vocab=self.relation_vocab)
             self.target_net.train()
-            self.pretrained_cmd_gen_net.eval()
+            self.pretrained_graph_generation_net.eval()
             self.update_target_net()
             for param in self.target_net.parameters():
                 param.requires_grad = False
-            for param in self.pretrained_cmd_gen_net.parameters():
+            for param in self.pretrained_graph_generation_net.parameters():
                 param.requires_grad = False
             if self.use_cuda:
                 self.target_net.cuda()
-                self.pretrained_cmd_gen_net.cuda()
+                self.pretrained_graph_generation_net.cuda()
         else:
-            self.target_net, self.pretrained_cmd_gen_net = None, None
-
+            self.target_net, self.pretrained_graph_generation_net = None, None
 
         # exclude some parameters from optimizer
         param_frozen_list = [] # should be changed into torch.nn.ParameterList()
@@ -103,8 +102,6 @@ class Agent:
         # add reverse relations
         for i in range(self.origin_relation_number):
             self.relation_vocab.append(self.relation_vocab[i] + "_reverse")
-        # add self relation
-        self.relation_vocab += ["self"]
         self.relation2id = {}
         for i, w in enumerate(self.relation_vocab):
             self.relation2id[w] = i
@@ -144,10 +141,13 @@ class Agent:
         self.report_frequency = self.config['general']['checkpoint']['report_frequency']
         self.load_pretrained = self.config['general']['checkpoint']['load_pretrained']
         self.load_from_tag = self.config['general']['checkpoint']['load_from_tag']
-        self.load_graph_update_model_from_tag = self.config['general']['checkpoint']['load_graph_update_model_from_tag']
+        self.load_graph_generation_model_from_tag = self.config['general']['checkpoint']['load_graph_generation_model_from_tag']
         self.load_parameter_keywords = list(set(self.config['general']['checkpoint']['load_parameter_keywords']))
+        self.real_valued_graph = self.config['general']['model']['real_valued_graph']
 
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
+
+        self.backprop_frequency = self.config['obs_gen']['backprop_frequency'] 
 
         # AP specific
         self.ap_k_way_classification = self.config['ap']['k_way_classification']
@@ -166,6 +166,7 @@ class Agent:
         self.epsilon_anneal_from = self.config['rl']['epsilon_greedy']['epsilon_anneal_from']
         self.epsilon_anneal_to = self.config['rl']['epsilon_greedy']['epsilon_anneal_to']
         self.epsilon = self.epsilon_anneal_from
+        self.epsilon_scheduler = LinearSchedule(schedule_timesteps=self.epsilon_anneal_episodes, initial_p=self.epsilon_anneal_from, final_p=self.epsilon_anneal_to)
         self.noisy_net = self.config['rl']['epsilon_greedy']['noisy_net']
         if self.noisy_net:
             # disable epsilon greedy
@@ -236,35 +237,35 @@ class Agent:
             self.online_net.zero_noise()
             if self.target_net is not None:
                 self.target_net.zero_noise()
-            if self.pretrained_cmd_gen_net is not None:
-                self.pretrained_cmd_gen_net.zero_noise()
+            if self.pretrained_graph_generation_net is not None:
+                self.pretrained_graph_generation_net.zero_noise()
 
-    def load_pretrained_command_generation_model(self, load_from):
+    def load_pretrained_graph_generation_model(self, load_from):
         """
         Load pretrained checkpoint from file.
 
         Arguments:
             load_from: File name of the pretrained model checkpoint.
         """
-        print("loading model from %s\n" % (load_from))
+        print("loading pre-trained graph generation model from %s\n" % (load_from))
         try:
             if self.use_cuda:
                 pretrained_dict = torch.load(load_from)
             else:
                 pretrained_dict = torch.load(load_from, map_location='cpu')
             try:
-                self.pretrained_cmd_gen_net.load_state_dict(pretrained_dict)
+                self.pretrained_graph_generation_net.load_state_dict(pretrained_dict)
             except:
-                # graph update net
-                model_dict = self.pretrained_cmd_gen_net.state_dict()
+                # graph generation net
+                model_dict = self.pretrained_graph_generation_net.state_dict()
                 pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
                 model_dict.update(pretrained_dict)
-                self.pretrained_cmd_gen_net.load_state_dict(model_dict)
+                self.pretrained_graph_generation_net.load_state_dict(model_dict)
                 print("WARNING... Model dict is different with pretrained dict. I'm loading only the parameters with same labels now. Make sure you really want this...")
-                # print("The loaded parameters are:")
-                # for key in pretrained_dict:
-                #     print(key)
-                # print("--------------------------")
+                print("The loaded parameters are:")
+                keys = [key for key in pretrained_dict]
+                print(", ".join(keys))
+                print("--------------------------")
         except:
             print("Failed to load checkpoint...")
 
@@ -294,10 +295,9 @@ class Agent:
                 pretrained_dict = tmp_pretrained_dict
             model_dict.update(pretrained_dict)
             self.online_net.load_state_dict(model_dict)
-            print("WARNING... Model dict is different with pretrained dict. I'm loading only the parameters with same labels now. Make sure you really want this...")
             print("The loaded parameters are:")
-            for key in pretrained_dict:
-                print(key)
+            keys = [key for key in pretrained_dict]
+            print(", ".join(keys))
             print("--------------------------")
         except:
             print("Failed to load checkpoint...")
@@ -354,6 +354,60 @@ class Agent:
         request_infos.location = True
         request_infos.facts = True
         request_infos.last_action = True
+        request_infos.game = True
+        if self.use_negative_reward:
+            request_infos.has_lost = True
+            request_infos.has_won = True
+        return request_infos
+
+    def select_additional_infos_lite(self):
+        """
+        Returns what additional information should be made available at each game step.
+
+        Requested information will be included within the `infos` dictionary
+        passed to `CustomAgent.act()`. To request specific information, create a
+        :py:class:`textworld.EnvInfos <textworld.envs.wrappers.filter.EnvInfos>`
+        and set the appropriate attributes to `True`. The possible choices are:
+
+        * `description`: text description of the current room, i.e. output of the `look` command;
+        * `inventory`: text listing of the player's inventory, i.e. output of the `inventory` command;
+        * `max_score`: maximum reachable score of the game;
+        * `objective`: objective of the game described in text;
+        * `entities`: names of all entities in the game;
+        * `verbs`: verbs understood by the the game;
+        * `command_templates`: templates for commands understood by the the game;
+        * `admissible_commands`: all commands relevant to the current state;
+
+        In addition to the standard information, game specific information
+        can be requested by appending corresponding strings to the `extras`
+        attribute. For this competition, the possible extras are:
+
+        * `'recipe'`: description of the cookbook;
+        * `'walkthrough'`: one possible solution to the game (not guaranteed to be optimal);
+
+        Example:
+            Here is an example of how to request information and retrieve it.
+
+            >>> from textworld import EnvInfos
+            >>> request_infos = EnvInfos(description=True, inventory=True, extras=["recipe"])
+            ...
+            >>> env = gym.make(env_id)
+            >>> ob, infos = env.reset()
+            >>> print(infos["description"])
+            >>> print(infos["inventory"])
+            >>> print(infos["extra.recipe"])
+
+        Notes:
+            The following information *won't* be available at test time:
+
+            * 'walkthrough'
+        """
+        request_infos = EnvInfos()
+        request_infos.admissible_commands = True
+        request_infos.description = False
+        request_infos.location = False
+        request_infos.facts = False
+        request_infos.last_action = False
         request_infos.game = True
         if self.use_negative_reward:
             request_infos.has_lost = True
@@ -425,17 +479,22 @@ class Agent:
             model = self.online_net
         elif use_model == "target":
             model = self.target_net
-        elif use_model == "pretrained_cmd_gen":
-            model = self.pretrained_cmd_gen_net
+        elif use_model == "pretrained_graph_generation":
+            model = self.pretrained_graph_generation_net
         else:
             raise NotImplementedError
         return model
 
-    def encode_graph(self, triplets, use_model):
+    def encode_graph(self, graph_input, use_model):
         model = self.choose_model(use_model)
         input_node_name = self.get_graph_node_name_input()
         input_relation_name = self.get_graph_relation_name_input()
-        adjacency_matrix = self.get_graph_adjacency_matrix(triplets)
+        if isinstance(graph_input, list):
+            adjacency_matrix = self.get_graph_adjacency_matrix(graph_input)
+        elif isinstance(graph_input, torch.Tensor):
+            adjacency_matrix = graph_input
+        else:
+            raise NotImplementedError
         node_encoding_sequence, node_mask = model.encode_graph(input_node_name, input_relation_name, adjacency_matrix)
         return node_encoding_sequence, node_mask
 
@@ -445,6 +504,280 @@ class Agent:
         # encode
         obs_encoding_sequence, obs_mask = model.encode_text(input_obs)
         return obs_encoding_sequence, obs_mask
+
+    ##################################
+    ## rl with unsupervised graph
+    ##################################
+
+    def hidden_to_adjacency_matrix(self, hidden, batch_size, use_model):
+        model = self.choose_model(use_model)
+        num_node = len(self.node_vocab)
+        num_relation = len(self.relation_vocab)
+        if hidden is None:
+            adjacency_matrix = torch.zeros(batch_size, num_relation, num_node, num_node)
+            if self.use_cuda:
+                adjacency_matrix = adjacency_matrix.cuda()
+        else:
+            adjacency_matrix = torch.tanh(model.obs_gen_linear_2(F.relu(model.obs_gen_linear_1(hidden)))).view(batch_size, int(num_relation / 2), num_node, num_node)
+            adjacency_matrix = adjacency_matrix.repeat(1, 2, 1, 1)
+            for i in range(int(num_relation / 2)):
+                adjacency_matrix[:, int(num_relation / 2) + i] = adjacency_matrix[:, i].permute(0, 2, 1)
+        return adjacency_matrix
+
+    def generate_adjacency_matrix_for_rl(self, observation_strings, prev_action_strings, h_t_minus_one):
+        with torch.no_grad():
+            if h_t_minus_one is not None:
+                h_t_minus_one = h_t_minus_one.detach()
+            # TE-encode
+            input_obs = self.get_word_input(observation_strings)
+            prev_action_word_ids = self.get_word_input(prev_action_strings)
+            prev_action_encoding_sequence, prev_action_mask =  self.pretrained_graph_generation_net.encode_text_for_pretraining_tasks(prev_action_word_ids)
+            obs_encoding_sequence, obs_mask =  self.pretrained_graph_generation_net.encode_text_for_pretraining_tasks(input_obs)
+            prev_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t_minus_one, batch_size=len(observation_strings), use_model="pretrained_graph_generation")
+            node_encoding_sequence, node_mask = self.encode_graph(prev_adjacency_matrix, use_model="pretrained_graph_generation")
+
+            h_ag = self.pretrained_graph_generation_net.obs_gen_attention(prev_action_encoding_sequence, node_encoding_sequence, prev_action_mask, node_mask)
+            h_ga = self.pretrained_graph_generation_net.obs_gen_attention(node_encoding_sequence, prev_action_encoding_sequence, node_mask, prev_action_mask)
+
+            h_ag = self.pretrained_graph_generation_net.obs_gen_attention_prj(h_ag)
+            h_ga = self.pretrained_graph_generation_net.obs_gen_attention_prj(h_ga)
+
+            h_og = self.pretrained_graph_generation_net.obs_gen_attention(obs_encoding_sequence, node_encoding_sequence, obs_mask, node_mask)
+            h_go = self.pretrained_graph_generation_net.obs_gen_attention(node_encoding_sequence, obs_encoding_sequence, node_mask, obs_mask)
+
+            h_og = self.pretrained_graph_generation_net.obs_gen_attention_prj(h_og) # bs X len X block_hidden_dim
+            h_go = self.pretrained_graph_generation_net.obs_gen_attention_prj(h_go) # bs X len X block_hidden_dim
+
+            ave_h_go = masked_mean(h_go, m=node_mask, dim=1)
+            ave_h_og = masked_mean(h_og, m=obs_mask, dim=1)
+            ave_h_ga = masked_mean(h_ga, m=node_mask, dim=1)
+            ave_h_ag = masked_mean(h_ag, m=prev_action_mask, dim=1)
+
+            rnn_input = self.pretrained_graph_generation_net.obs_gen_attention_to_rnn_input(torch.cat([ave_h_go, ave_h_og, ave_h_ga, ave_h_ag], dim=1))  # batch x block_hidden_dim
+            rnn_input = torch.tanh(rnn_input)  # batch x block_hidden_dim
+            h_t = self.pretrained_graph_generation_net.obs_gen_graph_rnncell(rnn_input, h_t_minus_one) if h_t_minus_one is not None else self.pretrained_graph_generation_net.obs_gen_graph_rnncell(rnn_input)  # both batch x block_hidden_dim
+            current_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t, batch_size=len(observation_strings), use_model="pretrained_graph_generation")
+
+            return current_adjacency_matrix.detach(), h_t.detach()
+
+    ##################################
+    # observation generation specific
+    ##################################
+
+    def get_observation_infomax_logits(self, observation_strings, prev_action_strings, corrupted_observation_strings, h_t_minus_one):
+        # TE-encode
+        input_obs = self.get_word_input(observation_strings)
+        prev_action_word_ids = self.get_word_input(prev_action_strings)
+        prev_action_encoding_sequence, prev_action_mask = self.online_net.encode_text_for_pretraining_tasks(prev_action_word_ids)
+        obs_encoding_sequence, obs_mask = self.online_net.encode_text_for_pretraining_tasks(input_obs)
+        # TE-corrupted encode
+        corrupted_input_obs = self.get_word_input(corrupted_observation_strings)
+        corrupted_obs_encoding_sequence, corrupted_obs_mask = self.online_net.encode_text_for_pretraining_tasks(corrupted_input_obs)
+        # adj matrix
+        prev_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t_minus_one, batch_size=len(observation_strings), use_model="online")
+        node_encoding_sequence, node_mask = self.encode_graph(prev_adjacency_matrix, use_model="online")
+
+        h_ag = self.online_net.obs_gen_attention(prev_action_encoding_sequence, node_encoding_sequence, prev_action_mask, node_mask)
+        h_ga = self.online_net.obs_gen_attention(node_encoding_sequence, prev_action_encoding_sequence, node_mask, prev_action_mask)
+        h_ag = self.online_net.obs_gen_attention_prj(h_ag)
+        h_ga = self.online_net.obs_gen_attention_prj(h_ga)
+
+        h_og = self.online_net.obs_gen_attention(obs_encoding_sequence, node_encoding_sequence, obs_mask, node_mask)
+        h_go = self.online_net.obs_gen_attention(node_encoding_sequence, obs_encoding_sequence, node_mask, obs_mask)
+        h_og = self.online_net.obs_gen_attention_prj(h_og) # bs X len X block_hidden_dim
+        h_go = self.online_net.obs_gen_attention_prj(h_go) # bs X len X block_hidden_dim
+
+        ave_h_go = masked_mean(h_go, m=node_mask, dim=1)
+        ave_h_og = masked_mean(h_og, m=obs_mask, dim=1)
+        ave_h_ga = masked_mean(h_ga, m=node_mask, dim=1)
+        ave_h_ag = masked_mean(h_ag, m=prev_action_mask, dim=1)
+
+        rnn_input = self.online_net.obs_gen_attention_to_rnn_input(torch.cat([ave_h_go, ave_h_og, ave_h_ga, ave_h_ag], dim=1))  # batch x block_hidden_dim
+        rnn_input = torch.tanh(rnn_input)  # batch x block_hidden_dim
+        h_t = self.online_net.obs_gen_graph_rnncell(rnn_input, h_t_minus_one) if h_t_minus_one is not None else self.online_net.obs_gen_graph_rnncell(rnn_input)  # both batch x block_hidden_dim
+        current_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t, batch_size=len(observation_strings), use_model="online")
+        new_node_encoding_sequence, new_node_mask = self.encode_graph(current_adjacency_matrix, use_model="online")
+
+        h_ag2 = self.online_net.obs_gen_attention(prev_action_encoding_sequence, new_node_encoding_sequence, prev_action_mask, new_node_mask)
+        h_ga2 = self.online_net.obs_gen_attention(new_node_encoding_sequence, prev_action_encoding_sequence, new_node_mask, prev_action_mask)
+        h_ag2 = self.online_net.obs_gen_attention_prj(h_ag2)
+        h_ga2 = self.online_net.obs_gen_attention_prj(h_ga2)
+        ave_h_ag2 = masked_mean(h_ag2, m=prev_action_mask, dim=1)
+        ave_h_ga2 = masked_mean(h_ga2, m=new_node_mask, dim=1)
+        logits = self.online_net.observation_discriminator(torch.cat([ave_h_ag2, ave_h_ga2], dim=-1), obs_encoding_sequence, obs_mask, corrupted_obs_encoding_sequence, corrupted_obs_mask) 
+        return logits, h_t  
+
+    def get_observation_infomax_loss(self, observation_strings, prev_action_strings, evaluate=False):
+        curr_batch_size = len(observation_strings)
+        lens = [len(elem) for elem in observation_strings]
+        max_len = max(lens)
+        episodes_masks = torch.zeros((curr_batch_size, max_len), dtype=torch.float).cuda() if self.use_cuda else torch.zeros((curr_batch_size, max_len), dtype=torch.float)
+        for i in range(curr_batch_size):
+            episodes_masks[i, :lens[i]] = 1
+        episodes_masks = episodes_masks.repeat(2, 1) # repeat for corrupted obs 
+
+        observation_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in observation_strings]
+        prev_action_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in prev_action_strings]
+        prev_h = None
+        
+        last_k_batches_loss = []
+        return_losses = []
+        return_accuracies = []
+        
+        for i in range(max_len):
+            current_step_eps_masks = episodes_masks[:, i]
+            batch_obs_strings, batch_prev_action_strings, batch_corrupted_obs_strings = [], [], []
+            for j in range(curr_batch_size):
+                batch_obs_strings.append(observation_strings[j][i])
+                if lens[j] == 1 or random.random() > 0.7:
+                    random_id_from_batch = random.choice(range(len(observation_strings)))
+                    batch_corrupted_obs_strings.append(observation_strings[random_id_from_batch][random.choice(range(lens[random_id_from_batch]))])
+                    while(batch_corrupted_obs_strings[-1] == batch_obs_strings[-1]):
+                        random_id_from_batch = random.choice(range(len(observation_strings)))
+                        batch_corrupted_obs_strings[-1] = observation_strings[random_id_from_batch][random.choice(range(lens[random_id_from_batch]))]
+                else:
+                    batch_corrupted_obs_strings.append(observation_strings[j][random.choice(range(lens[j]))])
+                    while(batch_corrupted_obs_strings[-1] == batch_obs_strings[-1]):
+                        batch_corrupted_obs_strings[-1] = observation_strings[j][random.choice(range(lens[j]))]
+                batch_prev_action_strings.append(prev_action_strings[j][i])
+            logits, prev_h = self.get_observation_infomax_logits(batch_obs_strings, batch_prev_action_strings, batch_corrupted_obs_strings, prev_h)
+
+            # labels
+            labels_positive = torch.ones(curr_batch_size) # bs,
+            labels_negative = torch.zeros(curr_batch_size) # bs,
+            labels = torch.cat([labels_positive, labels_negative]) # bs*2,
+            if self.use_cuda:
+                labels = labels.cuda()
+
+            loss = torch.nn.BCEWithLogitsLoss(reduction="none")(logits.squeeze(1), labels)
+            loss = torch.sum(loss * current_step_eps_masks) / torch.sum(current_step_eps_masks)
+            return_losses.append(to_np(loss))
+            preds = to_np(logits.squeeze(1))
+            preds = (preds > 0.5).astype("int32")
+            for m in range(curr_batch_size):
+                if current_step_eps_masks[m] == 0:
+                    continue
+                return_accuracies.append(float(preds[m] == 1))
+            for m in range(curr_batch_size):
+                if current_step_eps_masks[m] == 0:
+                    continue
+                return_accuracies.append(float(preds[curr_batch_size + m] == 0))
+            if evaluate:
+                continue
+            last_k_batches_loss.append(loss.unsqueeze(0))
+            if ((i + 1) % self.backprop_frequency == 0 or i == max_len - 1) and i > 0:
+                self.optimizer.zero_grad()
+                torch_last_k_batches_loss = torch.cat(last_k_batches_loss)
+                ave_k_loss = torch.mean(torch_last_k_batches_loss)
+                ave_k_loss.backward()
+                self.optimizer.step()
+                last_k_batches_loss = []
+                prev_h = prev_h.detach()
+
+        return return_losses, return_accuracies
+
+    def observation_generation_teacher_force(self, observation_strings, prev_action_strings, episodes_masks, h_t_minus_one):
+        input_observation_strings = [" ".join(["<bos>"] + item.split()) for item in observation_strings]
+        output_observation_strings = [" ".join(item.split() + ["<eos>"]) for item in observation_strings]
+        ground_truth = self.get_word_input(output_observation_strings)
+        # TE-encode
+        input_obs = self.get_word_input(observation_strings)
+        prev_action_word_ids = self.get_word_input(prev_action_strings)
+        prev_action_encoding_sequence, prev_action_mask = self.online_net.encode_text_for_pretraining_tasks(prev_action_word_ids)
+        obs_encoding_sequence, obs_mask = self.online_net.encode_text_for_pretraining_tasks(input_obs)
+        prev_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t_minus_one, batch_size=len(observation_strings), use_model="online")
+        node_encoding_sequence, node_mask = self.encode_graph(prev_adjacency_matrix, use_model="online")
+
+        h_ag = self.online_net.obs_gen_attention(prev_action_encoding_sequence, node_encoding_sequence, prev_action_mask, node_mask)
+        h_ga = self.online_net.obs_gen_attention(node_encoding_sequence, prev_action_encoding_sequence, node_mask, prev_action_mask)
+        h_ag = self.online_net.obs_gen_attention_prj(h_ag)
+        h_ga = self.online_net.obs_gen_attention_prj(h_ga)
+
+        h_og = self.online_net.obs_gen_attention(obs_encoding_sequence, node_encoding_sequence, obs_mask, node_mask)
+        h_go = self.online_net.obs_gen_attention(node_encoding_sequence, obs_encoding_sequence, node_mask, obs_mask)
+        h_og = self.online_net.obs_gen_attention_prj(h_og) # bs X len X block_hidden_dim
+        h_go = self.online_net.obs_gen_attention_prj(h_go) # bs X len X block_hidden_dim
+
+        ave_h_go = masked_mean(h_go, m=node_mask, dim=1)
+        ave_h_og = masked_mean(h_og, m=obs_mask, dim=1)
+        ave_h_ga = masked_mean(h_ga, m=node_mask, dim=1)
+        ave_h_ag = masked_mean(h_ag, m=prev_action_mask, dim=1)
+
+        rnn_input = self.online_net.obs_gen_attention_to_rnn_input(torch.cat([ave_h_go, ave_h_og, ave_h_ga, ave_h_ag], dim=1))  # batch x block_hidden_dim
+        rnn_input = torch.tanh(rnn_input)  # batch x block_hidden_dim
+        h_t = self.online_net.obs_gen_graph_rnncell(rnn_input, h_t_minus_one) if h_t_minus_one is not None else self.online_net.obs_gen_graph_rnncell(rnn_input)  # both batch x block_hidden_dim
+
+        current_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t, batch_size=len(observation_strings), use_model="online")
+        new_node_encoding_sequence, new_node_mask = self.encode_graph(current_adjacency_matrix, use_model="online")
+
+        h_ag2 = self.online_net.obs_gen_attention(prev_action_encoding_sequence, new_node_encoding_sequence, prev_action_mask, new_node_mask)
+        h_ga2 = self.online_net.obs_gen_attention(new_node_encoding_sequence, prev_action_encoding_sequence, new_node_mask, prev_action_mask)
+        h_ag2 = self.online_net.obs_gen_attention_prj(h_ag2)
+        h_ga2 = self.online_net.obs_gen_attention_prj(h_ga2)
+        input_target = self.get_word_input(input_observation_strings)
+        target_mask = compute_mask(input_target)
+
+        pred = self.online_net.decode_for_obs_gen(input_target, h_ag2, prev_action_mask, h_ga2, new_node_mask)
+        batch_loss = NegativeLogLoss(pred * target_mask.unsqueeze(-1), ground_truth, target_mask, smoothing_eps=self.smoothing_eps)
+        loss = torch.sum(batch_loss * episodes_masks) / torch.sum(episodes_masks) # only place where using `episodes_masks`
+        return loss, pred * target_mask.unsqueeze(-1), h_t
+
+    def observation_generation_greedy_generation(self, observation_strings, prev_action_strings, episodes_masks, h_t_minus_one=None):
+        with torch.no_grad():
+            batch_size = len(observation_strings)
+            # encode
+            input_obs = self.get_word_input(observation_strings)
+            prev_action_word_ids = self.get_word_input(prev_action_strings)
+            model = self.choose_model("online")
+            
+            obs_encoding_sequence, obs_mask = model.encode_text_for_pretraining_tasks(input_obs)
+            prev_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t_minus_one, batch_size=len(observation_strings), use_model="online")
+            node_encoding_sequence, node_mask = self.encode_graph(prev_adjacency_matrix, use_model="online")
+            prev_action_sequence, prev_action_mask = model.encode_text_for_pretraining_tasks(prev_action_word_ids)
+
+            h_ag = self.online_net.obs_gen_attention(prev_action_sequence, node_encoding_sequence, prev_action_mask, node_mask)
+            h_ga = self.online_net.obs_gen_attention(node_encoding_sequence, prev_action_sequence, node_mask, prev_action_mask)
+            h_ag = self.online_net.obs_gen_attention_prj(h_ag)
+            h_ga = self.online_net.obs_gen_attention_prj(h_ga)
+
+            h_og = self.online_net.obs_gen_attention(obs_encoding_sequence, node_encoding_sequence, obs_mask, node_mask)
+            h_go = self.online_net.obs_gen_attention(node_encoding_sequence, obs_encoding_sequence, node_mask, obs_mask)
+            h_og = self.online_net.obs_gen_attention_prj(h_og) # bs X len X block_hidden_dim
+            h_go = self.online_net.obs_gen_attention_prj(h_go) # bs X len X block_hidden_dim
+
+            ave_h_go = masked_mean(h_go, m=node_mask, dim=1)
+            ave_h_og = masked_mean(h_og, m=obs_mask, dim=1)
+            ave_h_ga = masked_mean(h_ga, m=node_mask, dim=1)
+            ave_h_ag = masked_mean(h_ag, m=prev_action_mask, dim=1)
+
+            rnn_input = self.online_net.obs_gen_attention_to_rnn_input(torch.cat([ave_h_go, ave_h_og, ave_h_ga, ave_h_ag], dim=1))  # batch x block_hidden_dim
+            rnn_input = torch.tanh(rnn_input)  # batch x block_hidden_dim
+            h_t = self.online_net.obs_gen_graph_rnncell(rnn_input, h_t_minus_one) if h_t_minus_one is not None else self.online_net.obs_gen_graph_rnncell(rnn_input)  # both batch x block_hidden_dim
+            current_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t, batch_size=len(observation_strings), use_model="online")
+
+            new_node_encoding_sequence, new_node_mask = self.encode_graph(current_adjacency_matrix, use_model="online")
+            h_ag2 = self.online_net.obs_gen_attention(prev_action_sequence, new_node_encoding_sequence, prev_action_mask, new_node_mask)
+            h_ga2 = self.online_net.obs_gen_attention(new_node_encoding_sequence, prev_action_sequence, new_node_mask, prev_action_mask)
+            h_ag2 = self.online_net.obs_gen_attention_prj(h_ag2)
+            h_ga2 = self.online_net.obs_gen_attention_prj(h_ga2)
+
+            input_target_token_list = [["<bos>"] for i in range(batch_size)]
+            eos = np.zeros(batch_size)
+            for _ in range(self.max_target_length):
+
+                input_target = self.get_word_input([" ".join(item) for item in input_target_token_list])
+                pred = model.decode_for_obs_gen(input_target, h_ag2, prev_action_mask, h_ga2, new_node_mask)  # batch x time x vocab
+                # pointer softmax
+                pred = to_np(pred[:, -1])  # batch x vocab
+                pred = np.argmax(pred, -1)  # batch
+                for b in range(batch_size):
+                    new_stuff = [self.word_vocab[pred[b]]] if eos[b] == 0 else []
+                    input_target_token_list[b] = input_target_token_list[b] + new_stuff
+                    if pred[b] == self.word2id["<eos>"]:
+                        eos[b] = 1
+                if np.sum(eos) == batch_size:
+                    break
+            return [" ".join(item[1:]) for item in input_target_token_list], h_t
 
     ##################################
     # command generation specific
@@ -489,9 +822,9 @@ class Agent:
             batch_size = len(observation_strings)
             # encode
             input_obs = self.get_word_input(observation_strings)
-            model = self.choose_model("pretrained_cmd_gen")
+            model = self.choose_model("pretrained_graph_generation")
             obs_encoding_sequence, obs_mask = model.encode_text_for_pretraining_tasks(input_obs)
-            node_encoding_sequence, node_mask = self.encode_graph(triplets, use_model="pretrained_cmd_gen" if self.task == "rl" else "online")
+            node_encoding_sequence, node_mask = self.encode_graph(triplets, use_model="pretrained_graph_generation" if self.task == "rl" else "online")
 
             h_og = model.cmd_gen_attention(obs_encoding_sequence, node_encoding_sequence, obs_mask, node_mask)
             h_go = model.cmd_gen_attention(node_encoding_sequence, obs_encoding_sequence, node_mask, obs_mask)
@@ -728,7 +1061,7 @@ class Agent:
         if episode_no < self.learn_start_from_this_episode:
             return
         if episode_no < self.epsilon_anneal_episodes + self.learn_start_from_this_episode:
-            self.epsilon -= (self.epsilon_anneal_from - self.epsilon_anneal_to) / float(self.epsilon_anneal_episodes)
+            self.epsilon = self.epsilon_scheduler.value(episode_no - self.learn_start_from_this_episode)
             self.epsilon = max(self.epsilon, 0.0)
 
     def get_game_info_at_certain_step_fully_observable(self, obs, infos):
@@ -795,6 +1128,25 @@ class Agent:
 
         return observation_strings, current_triplets, action_candidate_list, target_command_strings, new_facts
 
+    def get_game_info_at_certain_step_lite(self, obs, infos):
+        """
+        Get all needed info from game engine for training.
+        Arguments:
+            obs: Previous command's feedback for each game.
+            infos: Additional information for each game.
+        """
+        if self.fully_observable_graph:
+            return self.get_game_info_at_certain_step_fully_observable(obs, infos)
+
+        batch_size = len(obs)
+        observation_strings = [preproc(item, tokenizer=self.nlp) for item in obs]
+        action_candidate_list = []
+        for b in range(batch_size):
+            ac = [preproc(item, tokenizer=self.nlp) for item in infos["admissible_commands"][b]]
+            action_candidate_list.append(ac)
+
+        return observation_strings, action_candidate_list
+
     def update_knowledge_graph_triplets(self, triplets, prediction_strings):
         new_triplets = []
         for i in range(len(triplets)):
@@ -812,7 +1164,7 @@ class Agent:
             new_triplets.append(update_graph_triplets(triplets[i], predict_cmds, self.node_vocab, self.relation_vocab))
         return new_triplets
 
-    def encode(self, observation_strings, triplets, use_model):
+    def encode(self, observation_strings, graph_input, use_model):
         assert self.task == "rl"
         model = self.choose_model(use_model)
         # step 1 and 3, at step 3, the agent doesn't have to re-encode observation
@@ -823,7 +1175,7 @@ class Agent:
             obs_encoding_sequence, obs_mask = None, None
 
         if self.enable_graph_input:
-            node_encoding_sequence, node_mask = self.encode_graph(triplets, use_model=use_model)
+            node_encoding_sequence, node_mask = self.encode_graph(graph_input, use_model=use_model)
         else:
             node_encoding_sequence, node_mask = None, None
 
@@ -833,7 +1185,7 @@ class Agent:
         else:
             return obs_encoding_sequence, obs_mask, node_encoding_sequence, node_mask
 
-    def action_scoring(self, action_candidate_list, h_og=None, obs_mask=None, h_go=None, node_mask=None, previous_h=None, previous_c=None, use_model="online"):
+    def action_scoring(self, action_candidate_list, h_og=None, obs_mask=None, h_go=None, node_mask=None, previous_h=None, previous_c=None, use_model=None):
         model = self.choose_model(use_model)
         # step 4
         input_action_candidate = self.get_action_candidate_list_input(action_candidate_list)
@@ -867,40 +1219,38 @@ class Agent:
         action_indices = torch.argmax(action_rank, -1)  # batch
         return to_np(action_indices)
 
-    def act_greedy(self, observation_strings, triplets, action_candidate_list, previous_h=None, previous_c=None):
+    def act_greedy(self, observation_strings, graph_input, action_candidate_list, previous_h=None, previous_c=None):
         with torch.no_grad():
-            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, triplets, use_model="online")
+            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, graph_input, use_model="online")
             action_scores, action_masks, new_h, new_c = self.action_scoring(action_candidate_list, h_og, obs_mask, h_go, node_mask, previous_h, previous_c, use_model="online")
             action_indices_maxq = self.choose_maxQ_action(action_scores, action_masks)
             chosen_indices = action_indices_maxq
             chosen_indices = chosen_indices.astype(int)
             chosen_actions = [item[idx] for item, idx in zip(action_candidate_list, chosen_indices)]
 
-            replay_info = [observation_strings, triplets, action_candidate_list, chosen_indices]
-            return chosen_actions, chosen_indices, replay_info, new_h, new_c
+            return chosen_actions, chosen_indices, new_h, new_c
 
-    def act_random(self, observation_strings, triplets, action_candidate_list, previous_h=None, previous_c=None):
+    def act_random(self, observation_strings, graph_input, action_candidate_list, previous_h=None, previous_c=None):
         with torch.no_grad():
-            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, triplets, use_model="online")
+            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, graph_input, use_model="online")
             action_scores, _, new_h, new_c = self.action_scoring(action_candidate_list, h_og, obs_mask, h_go, node_mask, previous_h, previous_c, use_model="online")
             action_indices_random = self.choose_random_action(action_scores, action_candidate_list)
 
             chosen_indices = action_indices_random
             chosen_indices = chosen_indices.astype(int)
             chosen_actions = [item[idx] for item, idx in zip(action_candidate_list, chosen_indices)]
-            replay_info = [observation_strings, triplets, action_candidate_list, chosen_indices]
-            return chosen_actions, chosen_indices, replay_info, new_h, new_c
+            return chosen_actions, chosen_indices, new_h, new_c
 
-    def act(self, observation_strings, triplets, action_candidate_list, previous_h=None, previous_c=None, random=False):
+    def act(self, observation_strings, graph_input, action_candidate_list, previous_h=None, previous_c=None, random=False):
 
         with torch.no_grad():
             if self.mode == "eval":
-                return self.act_greedy(observation_strings, triplets, action_candidate_list, previous_h, previous_c)
+                return self.act_greedy(observation_strings, graph_input, action_candidate_list, previous_h, previous_c)
             if random:
-                return self.act_random(observation_strings, triplets, action_candidate_list, previous_h, previous_c)
+                return self.act_random(observation_strings, graph_input, action_candidate_list, previous_h, previous_c)
             batch_size = len(observation_strings)
 
-            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, triplets, use_model="online")
+            h_og, obs_mask, h_go, node_mask = self.encode(observation_strings, graph_input, use_model="online")
             action_scores, action_masks, new_h, new_c = self.action_scoring(action_candidate_list, h_og, obs_mask, h_go, node_mask, previous_h, previous_c, use_model="online")
 
             action_indices_maxq = self.choose_maxQ_action(action_scores, action_masks)
@@ -915,8 +1265,64 @@ class Agent:
             chosen_indices = chosen_indices.astype(int)
             chosen_actions = [item[idx] for item, idx in zip(action_candidate_list, chosen_indices)]
 
-            replay_info = [observation_strings, triplets, action_candidate_list, chosen_indices]
-            return chosen_actions, chosen_indices, replay_info, new_h, new_c
+            return chosen_actions, chosen_indices, new_h, new_c
+
+    def get_dqn_loss_with_real_graphs(self, episode_no):
+        """
+        Update neural model in agent. In this example we follow algorithm
+        of updating model in dqn with replay memory.
+        """
+        if len(self.dqn_memory) < self.replay_batch_size:
+            return None, None
+        data = self.dqn_memory.sample(self.replay_batch_size, beta=self.beta_scheduler.value(episode_no), multi_step=self.multi_step)
+        if data is None:
+            return None, None
+
+        obs_list, prev_action_list, candidate_list, action_indices, prev_graph_hidden_state, rewards, next_obs_list, next_prev_action_list, next_candidate_list, next_prev_graph_hidden_state, actual_indices, actual_ns, prior_weights = data
+        prev_graph_hidden_state = to_pt(np.stack(prev_graph_hidden_state, 0), enable_cuda=self.use_cuda, type='float')
+        new_adjacency_matrix, _ = self.generate_adjacency_matrix_for_rl(obs_list, prev_action_list, prev_graph_hidden_state)
+        next_prev_graph_hidden_state = to_pt(np.stack(next_prev_graph_hidden_state, 0), enable_cuda=self.use_cuda, type='float')
+        next_new_adjacency_matrix, _ = self.generate_adjacency_matrix_for_rl(next_obs_list, next_prev_action_list, next_prev_graph_hidden_state)
+
+        h_og, obs_mask, h_go, node_mask = self.encode(obs_list, new_adjacency_matrix, use_model="online")
+        action_scores, _, _, _ = self.action_scoring(candidate_list, h_og, obs_mask, h_go, node_mask, None, None, use_model="online")
+
+        # ps_a
+        action_indices = to_pt(action_indices, enable_cuda=self.use_cuda, type='long').unsqueeze(-1)
+        q_value = ez_gather_dim_1(action_scores, action_indices).squeeze(1)  # batch
+
+        with torch.no_grad():
+            if self.noisy_net:
+                self.target_net.reset_noise()  # Sample new target net noise
+            # pns Probabilities p(s_t+n, ·; θonline)
+            h_og, obs_mask, h_go, node_mask = self.encode(next_obs_list, next_new_adjacency_matrix, use_model="online")
+            next_action_scores, next_action_masks, _, _ = self.action_scoring(next_candidate_list, h_og, obs_mask, h_go, node_mask, None, None, use_model="online")
+
+            # Perform argmax action selection using online network: argmax_a[(z, p(s_t+n, a; θonline))]
+            next_action_indices = self.choose_maxQ_action(next_action_scores, next_action_masks)  # batch
+            next_action_indices = to_pt(next_action_indices, enable_cuda=self.use_cuda, type='long').unsqueeze(-1)
+            # pns # Probabilities p(s_t+n, ·; θtarget)
+            h_og, obs_mask, h_go, node_mask = self.encode(next_obs_list, next_new_adjacency_matrix, use_model="target")
+            next_action_scores, next_action_masks, _, _ = self.action_scoring(next_candidate_list, h_og, obs_mask, h_go, node_mask, None, None, use_model="target")
+
+            # pns_a # Double-Q probabilities p(s_t+n, argmax_a[(z, p(s_t+n, a; θonline))]; θtarget)
+            next_q_value = ez_gather_dim_1(next_action_scores, next_action_indices).squeeze(1)  # batch
+            discount = to_pt((np.ones_like(actual_ns) * self.discount_gamma_game_reward) ** actual_ns, self.use_cuda, type="float")
+
+        rewards = rewards + next_q_value * discount  # batch
+        loss = F.smooth_l1_loss(q_value, rewards, reduce=False)  # batch
+
+        prior_weights = to_pt(prior_weights, enable_cuda=self.use_cuda, type="float")
+        loss = loss * prior_weights
+        loss = torch.mean(loss)
+
+        abs_td_error = np.abs(to_np(q_value - rewards))
+        new_priorities = abs_td_error + self.prioritized_replay_eps
+        success = self.dqn_memory.update_priorities(actual_indices, new_priorities)
+        if not success:
+            return None, None
+
+        return loss, q_value
 
     def get_dqn_loss(self, episode_no):
         """
@@ -931,7 +1337,7 @@ class Agent:
         if data is None:
             return None, None
 
-        obs_list, candidate_list, action_indices, graph_triplet_list, rewards, next_obs_list, next_candidate_list, next_graph_triplet_list, actual_indices, actual_ns, prior_weights = data
+        obs_list, _, candidate_list, action_indices, graph_triplet_list, rewards, next_obs_list, _, next_candidate_list, next_graph_triplet_list, actual_indices, actual_ns, prior_weights = data
 
         h_og, obs_mask, h_go, node_mask = self.encode(obs_list, graph_triplet_list, use_model="online")
         action_scores, _, _, _ = self.action_scoring(candidate_list, h_og, obs_mask, h_go, node_mask, None, None, use_model="online")
@@ -991,13 +1397,15 @@ class Agent:
 
         for step_no in range(self.replay_sample_history_length):
             obs_list = data[step_no][0]
-            candidate_list = data[step_no][1]
-            action_indices = data[step_no][2]
-            graph_triplet_list = data[step_no][3]
-            rewards = data[step_no][4]
-            next_obs_list = data[step_no][5]
-            next_candidate_list = data[step_no][6]
-            next_graph_triplet_list = data[step_no][7]
+            # prev action: 1
+            candidate_list = data[step_no][2]
+            action_indices = data[step_no][3]
+            graph_triplet_list = data[step_no][4]
+            rewards = data[step_no][5]
+            next_obs_list = data[step_no][6]
+            # next prev action: 7
+            next_candidate_list = data[step_no][8]
+            next_graph_triplet_list = data[step_no][9]
 
             h_og, obs_mask, h_go, node_mask = self.encode(obs_list, graph_triplet_list, use_model="online")
             action_scores, _, new_h, new_c = self.action_scoring(candidate_list, h_og, obs_mask, h_go, node_mask, prev_h, prev_c, use_model="online")
@@ -1052,7 +1460,9 @@ class Agent:
 
     def update_dqn(self, episode_no):
         # update neural model by replaying snapshots in replay memory
-        if self.enable_recurrent_memory:
+        if self.real_valued_graph:
+            dqn_loss, q_value = self.get_dqn_loss_with_real_graphs(episode_no)
+        elif self.enable_recurrent_memory:
             dqn_loss, q_value = self.get_drqn_loss(episode_no)
         else:
             dqn_loss, q_value = self.get_dqn_loss(episode_no)

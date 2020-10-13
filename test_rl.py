@@ -31,15 +31,19 @@ def run_eval():
     json_file_name = agent.experiment_tag.replace(" ", "_")
     # load pretrained models
     agent.load_pretrained_model(agent.load_from_tag + ".pt", load_partial_graph=False)
-    if agent.eval_g_belief:
-        agent.load_pretrained_command_generation_model(data_dir + "/" + agent.load_graph_update_model_from_tag + ".pt")
 
     # evaluate
-    if agent.eval_g_belief:
-        eval_game_points, eval_game_points_normalized, eval_game_step, command_generation_f1, detailed_scores = evaluate.evaluate_belief_mode(eval_env, agent, num_eval_game)
-    else:
-        eval_game_points, eval_game_points_normalized, eval_game_step, _, detailed_scores = evaluate.evaluate(eval_env, agent, num_eval_game)
+    if agent.real_valued_graph:
+        agent.load_pretrained_graph_generation_model(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt")
+        eval_game_points, eval_game_points_normalized, eval_game_step, detailed_scores = evaluate.evaluate_rl_with_real_graphs(eval_env, agent, num_eval_game)
         command_generation_f1 = 0.0
+    else:
+        if agent.eval_g_belief:
+            agent.load_pretrained_graph_generation_model(data_dir + "/" + agent.load_graph_generation_model_from_tag + ".pt")
+            eval_game_points, eval_game_points_normalized, eval_game_step, command_generation_f1, detailed_scores = evaluate.evaluate_belief_mode(eval_env, agent, num_eval_game)
+        else:
+            eval_game_points, eval_game_points_normalized, eval_game_step, _, detailed_scores = evaluate.evaluate(eval_env, agent, num_eval_game)
+            command_generation_f1 = 0.0
 
     # write accuracies down into file
     _s = json.dumps({"eval game points": str(eval_game_points),

@@ -1144,6 +1144,66 @@ class DecoderBlock(torch.nn.Module):
             return inputs + residual
 
 
+class DecoderBlockForObsGen(torch.nn.Module):
+    def __init__(self, ch_num, k, block_hidden_dim, n_head, dropout):
+        super().__init__()
+        self.dropout = dropout
+        self.self_att = SelfAttention(block_hidden_dim, n_head, dropout)
+        self.obs_att = SelfAttention(block_hidden_dim, n_head, dropout)
+        self.node_att = SelfAttention(block_hidden_dim, n_head, dropout)
+        self.FFN_0 = torch.nn.Linear(block_hidden_dim * 2, block_hidden_dim)
+        self.FFN_1 = torch.nn.Linear(ch_num, ch_num)
+        self.FFN_2 = torch.nn.Linear(ch_num, ch_num)
+        self.norm_1 = torch.nn.LayerNorm(block_hidden_dim)
+        self.norm_2 = torch.nn.LayerNorm(block_hidden_dim)
+
+    def forward(self, x, mask, self_att_mask, prev_action_enc_representations, prev_action_mask, node_enc_representations, node_mask, l, blks):
+        total_layers = blks * 3
+        # conv layers
+        out = PosEncoder(x)
+        res = out
+        # self attention
+        out, _ = self.self_att(out, self_att_mask, out, out)
+        out_self = out * mask.unsqueeze(-1)
+        out = self.layer_dropout(out_self, res, self.dropout * float(l) / total_layers)
+        l += 1
+        res = out
+        out = self.norm_1(out)
+        out = F.dropout(out, p=self.dropout, training=self.training)
+        # attention with encoder outputs
+        out_obs, obs_attention = self.obs_att(out, prev_action_mask, prev_action_enc_representations, prev_action_enc_representations)
+        out_node, _ = self.node_att(out, node_mask, node_enc_representations, node_enc_representations)
+
+        out = torch.cat([out_obs, out_node], -1)
+        out = self.FFN_0(out)
+        out = torch.relu(out)
+        out = out * mask.unsqueeze(-1)
+
+        out = self.layer_dropout(out, res, self.dropout * float(l) / total_layers)
+        l += 1
+        res = out
+        out = self.norm_2(out)
+        out = F.dropout(out, p=self.dropout, training=self.training)
+        # Fully connected layers
+        out = self.FFN_1(out)
+        out = torch.relu(out)
+        out = self.FFN_2(out)
+        out = out * mask.unsqueeze(-1)
+        out = self.layer_dropout(out, res, self.dropout * float(l) / total_layers)
+        l += 1
+        return out, out_self #, out_obs, obs_attention
+
+    def layer_dropout(self, inputs, residual, dropout):
+        if self.training == True:
+            pred = torch.empty(1).uniform_(0, 1) < dropout
+            if pred:
+                return residual
+            else:
+                return F.dropout(inputs, dropout, training=self.training) + residual
+        else:
+            return inputs + residual
+
+
 class CQAttention(torch.nn.Module):
     def __init__(self, block_hidden_dim, dropout=0):
         super().__init__()
@@ -1436,7 +1496,7 @@ class StackedRelationalGraphConvolution(torch.nn.Module):
             adjacency matrix:   batch x num_relations x num_entity x num_entity
     '''
 
-    def __init__(self, entity_input_dim, relation_input_dim, num_relations, hidden_dims, num_bases, use_highway_connections=False, dropout_rate=0.0):
+    def __init__(self, entity_input_dim, relation_input_dim, num_relations, hidden_dims, num_bases, use_highway_connections=False, dropout_rate=0.0, real_valued_graph=False):
         super(StackedRelationalGraphConvolution, self).__init__()
         self.entity_input_dim = entity_input_dim
         self.relation_input_dim = relation_input_dim
@@ -1444,6 +1504,7 @@ class StackedRelationalGraphConvolution(torch.nn.Module):
         self.num_relations = num_relations
         self.dropout_rate = dropout_rate
         self.num_bases = num_bases
+        self.real_valued_graph = real_valued_graph
         self.nlayers = len(self.hidden_dims)
         self.stack_gcns()
         self.use_highway_connections = use_highway_connections
@@ -1469,7 +1530,10 @@ class StackedRelationalGraphConvolution(torch.nn.Module):
                 else:
                     prev = x.clone()
             x = self.gcns[i](x, relation_features, adj)  # batch x num_nodes x hid
-            x = F.relu(x)
+            if self.real_valued_graph:
+                x = torch.sigmoid(x)
+            else:
+                x = F.relu(x)
             x = F.dropout(x, self.dropout_rate, training=self.training)
             if self.use_highway_connections:
                 gate = torch.sigmoid(self.highways[i](x))
@@ -1505,4 +1569,28 @@ class DGIDiscriminator(torch.nn.Module):
 
         logits = torch.cat((sc_1, sc_2), 1)
 
+        return logits
+
+
+class ObservationDiscriminator(torch.nn.Module):
+    def __init__(self, n_h):
+        super(ObservationDiscriminator, self).__init__()
+        self.f_k = torch.nn.Bilinear(2 * n_h, n_h, 1)
+        for m in self.modules():
+            self.weights_init(m)
+
+    def weights_init(self, m):
+        if isinstance(m, torch.nn.Bilinear):
+            torch.nn.init.xavier_uniform_(m.weight.data)
+            if m.bias is not None:
+                m.bias.data.fill_(0.0)
+
+    def forward(self, c, h_p, p_mask, h_n, n_mask, s_bias1=None, s_bias2=None):
+        masked_ave_hp = masked_mean(h_p, p_mask)
+        masked_ave_hn = masked_mean(h_n, n_mask)
+
+        sc_1 = self.f_k(c, masked_ave_hp)
+        sc_2 = self.f_k(c, masked_ave_hn)
+
+        logits = torch.cat([sc_1, sc_2], dim=0)
         return logits

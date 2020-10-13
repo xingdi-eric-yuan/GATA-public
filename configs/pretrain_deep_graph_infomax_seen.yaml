@@ -1,13 +1,13 @@
 general:
-  task: "rl"  # obs_gen, obs_infomax, cmd_gen, ap, sp, dgi, rl
+  task: "dgi"  # obs_gen, obs_infomax, cmd_gen, ap, sp, dgi, rl
   random_seed: 42
   use_this_many_data: -1
   use_cuda: True  # disable this when running on machine without cuda
-  visdom: False
+  visdom: True
 
   training:
-    batch_size: 32  # for sp, change this to 64
-    max_episode: 100000
+    batch_size: 256
+    max_episode: 1000000
     smoothing_eps: 0.1
     optimizer:
       step_rule: 'radam'  # adam, radam
@@ -20,17 +20,17 @@ general:
   evaluate:
     run_eval: True
     g_belief: False
-    batch_size: 256  # for sp, change this to 64
+    batch_size: 256
     max_target_length: 200
 
   checkpoint:
-    report_frequency: 5000  # episode
-    save_frequency: 1000  # episode
-    experiment_tag: 'exp_tag'
+    report_frequency: 10000  # episode
+    save_frequency: 10000  # episode
+    experiment_tag: 'gata_gtp_pretrain_dgi_seen'
     load_pretrained: False  # during test, enable this so that the agent load your pretrained model
-    load_from_tag: 'pretrain_model'
+    load_from_tag: 'not loading anything here'
     load_parameter_keywords: ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
-    load_graph_generation_model_from_tag: 'graph_generation_model_tag'
+    load_graph_generation_model_from_tag: 'not loading anything here'
 
   model:
     use_pretrained_embedding: True
@@ -75,7 +75,7 @@ sp:
 
 dgi:
   data_path: "dgi.0.2"
-  graph_type: "full"  # full, seen
+  graph_type: "seen"  # full, seen
   sample_bias_positive: 0.0
   sample_bias_negative: 0.0
 

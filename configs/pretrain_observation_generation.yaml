@@ -1,36 +1,36 @@
 general:
-  task: "rl"  # obs_gen, obs_infomax, cmd_gen, ap, sp, dgi, rl
+  task: "obs_gen"  # obs_gen, cmd_gen, ap, sp, dgi, rl
   random_seed: 42
   use_this_many_data: -1
   use_cuda: True  # disable this when running on machine without cuda
-  visdom: False
+  visdom: True
 
   training:
-    batch_size: 32  # for sp, change this to 64
-    max_episode: 100000
+    batch_size: 48
+    max_episode: 300000
     smoothing_eps: 0.1
     optimizer:
       step_rule: 'radam'  # adam, radam
-      learning_rate: 0.001
+      learning_rate: 0.0005
       clip_grad_norm: 5
-      learning_rate_warmup_until:  1000
+      learning_rate_warmup_until:  10000
     fix_parameters_keywords: []  # ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
     patience: 3  # >=1 to enable
 
   evaluate:
     run_eval: True
     g_belief: False
-    batch_size: 256  # for sp, change this to 64
+    batch_size: 128  # for sp, change this to 64
     max_target_length: 200
 
   checkpoint:
-    report_frequency: 5000  # episode
+    report_frequency: 1000  # episode
     save_frequency: 1000  # episode
-    experiment_tag: 'exp_tag'
+    experiment_tag: 'gata_pretrain_obs_gen'
     load_pretrained: False  # during test, enable this so that the agent load your pretrained model
-    load_from_tag: 'pretrain_model'
+    load_from_tag: 'not loading anything here'
     load_parameter_keywords: ["rgcns", "word_embedding", "node_embedding", "relation_embedding", "word_embedding_prj"]
-    load_graph_generation_model_from_tag: 'graph_generation_model_tag'
+    load_graph_generation_model_from_tag: 'not loading anything here'
 
   model:
     use_pretrained_embedding: True

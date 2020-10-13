@@ -1,6 +1,6 @@
-# WIP, Please use the master branch
+# GATA: Graph Aided Transformer Agent
 ---------------------------------------------------------------------------
-Code for paper [Learning Dynamic Knowledge Graphs to Generalize on Text-based Games](https://arxiv.org/abs/2002.09127).
+Code for NeurIPS 2020 paper [Learning Dynamic Belief Graphs to Generalize on Text-Based Games](https://arxiv.org/abs/2002.09127).
 
 ```
 # Dependencies

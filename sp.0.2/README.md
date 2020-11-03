@@ -1,12 +1,22 @@
-# Make sure you are in the root folder of the project.
-# Requirement: collect playthroughs first (see ./playthroughs/README.md).
-# wget https://bit.ly/2Uyj9wS
+# Building the datasets needed for pre-training the graph encoder on a State Prediction task
 
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/train.json --out ./sp.0.2/train.seen.json --graph-type seen
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/train.json --out ./sp.0.2/train.full.json --graph-type full
+GATA's graph encoder can be pre-trained by a State Prediction task. We make use of trajectories extracted from playing several text-based games.
 
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/valid.json --out ./sp.0.2/valid.seen.json --graph-type seen
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/valid.json --out ./sp.0.2/valid.full.json --graph-type full
+For convenience, the datasets were made available at [https://aka.ms/twkg/sp.0.2.zip](https://aka.ms/twkg/sp.0.2.zip). Once downloaded, extract its contents into `sp.0.2/`.
 
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/test.json --out ./sp.0.2/test.seen.json --graph-type seen
-PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/test.json --out ./sp.0.2/test.full.json --graph-type full
+## Prerequisite
+
+Collect playthroughs (see [../playthroughs/README.md](../playthroughs/README.md)).
+
+## Instructions
+
+Make sure you are in the root folder of the project. Then run,
+
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/train.json --out ./sp.0.2/train.seen.json --graph-type seen
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/train.json --out ./sp.0.2/train.full.json --graph-type full
+
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/valid.json --out ./sp.0.2/valid.seen.json --graph-type seen
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/valid.json --out ./sp.0.2/valid.full.json --graph-type full
+
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/test.json --out ./sp.0.2/test.seen.json --graph-type seen
+    PYTHONPATH=. python ./sp.0.2/make_state_prediction_dataset.py ./playthroughs/test.json --out ./sp.0.2/test.full.json --graph-type full

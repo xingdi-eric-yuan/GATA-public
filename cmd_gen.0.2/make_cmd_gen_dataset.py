@@ -42,7 +42,7 @@ def download(url, filename=None, force=False):
 
 def extract_games(zip_filename, dst):
     zipped_file = zipfile.ZipFile(zip_filename)
-    filenames_to_extract = [f for f in zipped_file.namelist() if f.endswith(".ulx") or f.endswith(".json")]
+    filenames_to_extract = [f for f in zipped_file.namelist() if f.endswith(".z8") or f.endswith(".json")]
 
     subdirs = {
         "train": pjoin(dst, "train"),

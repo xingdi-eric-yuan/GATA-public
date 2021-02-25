@@ -237,10 +237,15 @@ class KG_Manipulation(torch.nn.Module):
 
         node_encoding_sequence = self.rgcns(node_embeddings, relation_embeddings, input_adjacency_matrices)  # batch x num_node x enc
 
-        node_mask = torch.sum(input_adjacency_matrices[:, :-1, :, :], 1)  # batch x num_node x num_node
-        node_mask = torch.sum(node_mask, -1) + torch.sum(node_mask, -2)  # batch x num_node
-        node_mask = torch.gt(node_mask, 0).float()
-        node_encoding_sequence = node_encoding_sequence * node_mask.unsqueeze(-1)
+        if self.real_valued_graph:
+            node_mask = torch.ones(node_encoding_sequence.size(0), node_encoding_sequence.size(1))  # batch x num_node
+            if node_encoding_sequence.is_cuda:
+                node_mask.cuda()
+        else:
+            node_mask = torch.sum(input_adjacency_matrices[:, :-1, :, :], 1)  # batch x num_node x num_node
+            node_mask = torch.sum(node_mask, -1) + torch.sum(node_mask, -2)  # batch x num_node
+            node_mask = torch.gt(node_mask, 0).float()
+            node_encoding_sequence = node_encoding_sequence * node_mask.unsqueeze(-1)
 
         return node_encoding_sequence, node_mask
 

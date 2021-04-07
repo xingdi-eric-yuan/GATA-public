@@ -49,7 +49,7 @@ general:
     gcn_hidden_dims: [64, 64, 64, 64, 64, 64]  # last one should equal to block hidden dim
     gcn_highway_connections: True
     gcn_num_bases: 3
-    real_valued_graph: True
+    real_valued_graph: False
     n_heads: 1
     dropout: 0.
     attention_dropout: 0.

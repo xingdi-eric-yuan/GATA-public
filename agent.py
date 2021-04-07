@@ -76,6 +76,7 @@ class Agent:
             raise NotImplementedError
 
     def load_config(self):
+        self.real_valued_graph = self.config['general']['model']['real_valued_graph']
         self.task = self.config['general']['task']
         # word vocab
         self.word_vocab = []
@@ -102,6 +103,9 @@ class Agent:
         # add reverse relations
         for i in range(self.origin_relation_number):
             self.relation_vocab.append(self.relation_vocab[i] + "_reverse")
+        if not self.real_valued_graph:
+            # add self relation
+            self.relation_vocab += ["self"]
         self.relation2id = {}
         for i, w in enumerate(self.relation_vocab):
             self.relation2id[w] = i
@@ -143,7 +147,6 @@ class Agent:
         self.load_from_tag = self.config['general']['checkpoint']['load_from_tag']
         self.load_graph_generation_model_from_tag = self.config['general']['checkpoint']['load_graph_generation_model_from_tag']
         self.load_parameter_keywords = list(set(self.config['general']['checkpoint']['load_parameter_keywords']))
-        self.real_valued_graph = self.config['general']['model']['real_valued_graph']
 
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 

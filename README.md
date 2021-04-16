@@ -10,7 +10,7 @@ pip install --upgrade pip
 pip install numpy==1.16.2
 pip install gym==0.15.4
 pip install textworld
-pip install -U spacy
+pip install -U "spacy<3"
 python -m spacy download en
 pip install tqdm pipreqs h5py pyyaml visdom
 conda install pytorch torchvision cudatoolkit=9.2 -c pytorch

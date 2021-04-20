@@ -2,7 +2,7 @@ numpy==1.16.2
 gym==0.15.4
 h5py==2.10.0
 textworld
-spacy
+spacy<3
 tqdm
 pipreqs
 pyyaml

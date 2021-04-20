@@ -1400,15 +1400,13 @@ class Agent:
 
         for step_no in range(self.replay_sample_history_length):
             obs_list = data[step_no][0]
-            # prev action: 1
-            candidate_list = data[step_no][2]
-            action_indices = data[step_no][3]
-            graph_triplet_list = data[step_no][4]
-            rewards = data[step_no][5]
-            next_obs_list = data[step_no][6]
-            # next prev action: 7
-            next_candidate_list = data[step_no][8]
-            next_graph_triplet_list = data[step_no][9]
+            candidate_list = data[step_no][1]
+            action_indices = data[step_no][2]
+            graph_triplet_list = data[step_no][3]
+            rewards = data[step_no][4]
+            next_obs_list = data[step_no][5]
+            next_candidate_list = data[step_no][6]
+            next_graph_triplet_list = data[step_no][7]
 
             h_og, obs_mask, h_go, node_mask = self.encode(obs_list, graph_triplet_list, use_model="online")
             action_scores, _, new_h, new_c = self.action_scoring(candidate_list, h_og, obs_mask, h_go, node_mask, prev_h, prev_c, use_model="online")

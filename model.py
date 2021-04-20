@@ -240,7 +240,7 @@ class KG_Manipulation(torch.nn.Module):
         if self.real_valued_graph:
             node_mask = torch.ones(node_encoding_sequence.size(0), node_encoding_sequence.size(1))  # batch x num_node
             if node_encoding_sequence.is_cuda:
-                node_mask.cuda()
+                node_mask = node_mask.cuda()
         else:
             node_mask = torch.sum(input_adjacency_matrices[:, :-1, :, :], 1)  # batch x num_node x num_node
             node_mask = torch.sum(node_mask, -1) + torch.sum(node_mask, -2)  # batch x num_node

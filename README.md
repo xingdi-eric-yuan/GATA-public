@@ -16,7 +16,7 @@ pip install tqdm pipreqs h5py pyyaml visdom
 conda install pytorch torchvision cudatoolkit=9.2 -c pytorch
 
 # Download FastText Word Embeddings
-wget "https://bit.ly/2U3Mde2"
+curl -L -o crawl-300d-2M.vec.h5 "https://bit.ly/2U3Mde2"
 ```
 
 ## GATA

@@ -150,7 +150,7 @@ class Agent:
 
         self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
 
-        self.backprop_frequency = self.config['obs_gen']['backprop_frequency'] 
+        self.backprop_frequency = self.config['obs_gen']['backprop_frequency']
 
         # AP specific
         self.ap_k_way_classification = self.config['ap']['k_way_classification']
@@ -197,7 +197,8 @@ class Agent:
                                                                                       discount_gamma_game_reward=self.discount_gamma_game_reward,
                                                                                       discount_gamma_graph_reward=self.discount_gamma_graph_reward,
                                                                                       discount_gamma_count_reward=self.discount_gamma_count_reward,
-                                                                                      accumulate_reward_from_final=self.accumulate_reward_from_final)
+                                                                                      accumulate_reward_from_final=self.accumulate_reward_from_final,
+                                                                                      seed=self.config['general']['random_seed'])
         self.update_per_k_game_steps = self.config['rl']['replay']['update_per_k_game_steps']
         self.multi_step = self.config['rl']['replay']['multi_step']
         # input in rl training
@@ -607,8 +608,8 @@ class Agent:
         h_ga2 = self.online_net.obs_gen_attention_prj(h_ga2)
         ave_h_ag2 = masked_mean(h_ag2, m=prev_action_mask, dim=1)
         ave_h_ga2 = masked_mean(h_ga2, m=new_node_mask, dim=1)
-        logits = self.online_net.observation_discriminator(torch.cat([ave_h_ag2, ave_h_ga2], dim=-1), obs_encoding_sequence, obs_mask, corrupted_obs_encoding_sequence, corrupted_obs_mask) 
-        return logits, h_t  
+        logits = self.online_net.observation_discriminator(torch.cat([ave_h_ag2, ave_h_ga2], dim=-1), obs_encoding_sequence, obs_mask, corrupted_obs_encoding_sequence, corrupted_obs_mask)
+        return logits, h_t
 
     def get_observation_infomax_loss(self, observation_strings, prev_action_strings, evaluate=False):
         curr_batch_size = len(observation_strings)
@@ -617,16 +618,16 @@ class Agent:
         episodes_masks = torch.zeros((curr_batch_size, max_len), dtype=torch.float).cuda() if self.use_cuda else torch.zeros((curr_batch_size, max_len), dtype=torch.float)
         for i in range(curr_batch_size):
             episodes_masks[i, :lens[i]] = 1
-        episodes_masks = episodes_masks.repeat(2, 1) # repeat for corrupted obs 
+        episodes_masks = episodes_masks.repeat(2, 1) # repeat for corrupted obs
 
         observation_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in observation_strings]
         prev_action_strings = [elem + ["<pad>"]*(max_len - len(elem)) for elem in prev_action_strings]
         prev_h = None
-        
+
         last_k_batches_loss = []
         return_losses = []
         return_accuracies = []
-        
+
         for i in range(max_len):
             current_step_eps_masks = episodes_masks[:, i]
             batch_obs_strings, batch_prev_action_strings, batch_corrupted_obs_strings = [], [], []
@@ -732,7 +733,7 @@ class Agent:
             input_obs = self.get_word_input(observation_strings)
             prev_action_word_ids = self.get_word_input(prev_action_strings)
             model = self.choose_model("online")
-            
+
             obs_encoding_sequence, obs_mask = model.encode_text_for_pretraining_tasks(input_obs)
             prev_adjacency_matrix = self.hidden_to_adjacency_matrix(h_t_minus_one, batch_size=len(observation_strings), use_model="online")
             node_encoding_sequence, node_mask = self.encode_graph(prev_adjacency_matrix, use_model="online")

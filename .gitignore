@@ -109,3 +109,4 @@ venv.bak/
 # TextWorld-research specific
 *.json
 *.zip
+.DS_Store

@@ -107,7 +107,7 @@ rl:
     discount_gamma_game_reward: 0.9
     replay_memory_capacity: 500000  # adjust this depending on your RAM size
     replay_memory_priority_fraction: 0.6
-    update_per_k_game_steps: 50
+    update_per_k_game_steps: 2
     replay_batch_size: 64
     multi_step: 3
     replay_sample_history_length: 8

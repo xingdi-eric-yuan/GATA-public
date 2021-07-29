@@ -12,12 +12,14 @@ Transition = namedtuple('Transition', ('observation_list', 'prev_action_list', '
 
 class PrioritizedReplayMemory(object):
 
-    def __init__(self, capacity=100000, priority_fraction=0.0, discount_gamma_game_reward=1.0, discount_gamma_graph_reward=1.0, discount_gamma_count_reward=1.0, accumulate_reward_from_final=False):
+    def __init__(self, capacity=100000, priority_fraction=0.0, discount_gamma_game_reward=1.0, discount_gamma_graph_reward=1.0, discount_gamma_count_reward=1.0, accumulate_reward_from_final=False, seed=None):
+        self.rng = np.random.RandomState(seed)
+
         # prioritized replay memory
         self._storage = []
         self.capacity = capacity
         self._next_idx = 0
-        
+
         assert priority_fraction >= 0
         self._alpha = priority_fraction
 
@@ -98,7 +100,7 @@ class PrioritizedReplayMemory(object):
         else:
             if np.any([item.is_final for item in self._storage[head: head + n]]):
                 return None
-                
+
         next_final = self.get_next_final_pos(self._storage, head)
         if next_final is None:
             return None
@@ -122,7 +124,7 @@ class PrioritizedReplayMemory(object):
 
         graph_rewards_up_to_next_final = [self.discount_gamma_graph_reward ** i * self._storage[head + i].graph_reward for i in range(tmp)]
         graph_reward = torch.sum(torch.stack(graph_rewards_up_to_next_final))
-        
+
         count_rewards_up_to_next_final = [self.discount_gamma_count_reward ** i * self._storage[head + i].count_reward for i in range(tmp)]
         count_reward = torch.sum(torch.stack(count_rewards_up_to_next_final))
 
@@ -165,7 +167,7 @@ class PrioritizedReplayMemory(object):
         max_weight = (p_min * len(self._storage)) ** (-beta)
 
         # sample n
-        ns = np.random.randint(1, multi_step + 1, size=batch_size)
+        ns = self.rng.randint(1, multi_step + 1, size=batch_size)
         encoded_sample = self._encode_sample(idxes, ns)
         if encoded_sample is None:
             return None
@@ -189,7 +191,7 @@ class PrioritizedReplayMemory(object):
         else:
             if np.any([item.is_final for item in self._storage[head: head + sample_history_length]]):
                 return None
-                
+
         next_final = self.get_next_final_pos(self._storage, head)
         if next_final is None:
             return None
@@ -213,7 +215,7 @@ class PrioritizedReplayMemory(object):
 
             graph_rewards_up_to_next_final = [self.discount_gamma_graph_reward ** i * self._storage[head + m + i].graph_reward for i in range(tmp)]
             graph_reward = torch.sum(torch.stack(graph_rewards_up_to_next_final))
-            
+
             count_rewards_up_to_next_final = [self.discount_gamma_count_reward ** i * self._storage[head + m + i].count_reward for i in range(tmp)]
             count_reward = torch.sum(torch.stack(count_rewards_up_to_next_final))
 
@@ -252,7 +254,7 @@ class PrioritizedReplayMemory(object):
         for i in range(sample_history_length):
             res[i][2] = np.array(res[i][2])  # batch
             res[i][4] = torch.stack(res[i][4], 0)  # batch
-        
+
         return res + [actual_indices]
 
     def sample_sequence(self, batch_size, beta=0, sample_history_length=1):
@@ -281,7 +283,7 @@ class PrioritizedReplayMemory(object):
     def _sample_proportional(self, batch_size):
         res = []
         for _ in range(batch_size):
-            mass = random.random() * self._it_sum.sum(0, len(self._storage) - 1)
+            mass = self.rng.random() * self._it_sum.sum(0, len(self._storage) - 1)
             idx = self._it_sum.find_prefixsum_idx(mass)
             res.append(idx)
         return res

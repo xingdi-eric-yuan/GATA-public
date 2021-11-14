@@ -1419,7 +1419,7 @@ class Agent:
             prev_h, prev_c = new_h, new_c
             if step_no < self.replay_sample_update_from:
                 q_value = q_value.detach()
-                prev_h, prev_c = prev_h.detach(), prev_h.detach()
+                prev_h, prev_c = prev_h.detach(), prev_c.detach()
                 continue
 
             with torch.no_grad():

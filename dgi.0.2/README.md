@@ -2,7 +2,7 @@
 
 GATA's graph encoder can be pre-trained using Deep Graph Infomax. We make use of trajectories extracted from playing several text-based games.
 
-For convenience, the datasets were made available at [https://aka.ms/twkg/dgi.0.2.zip](https://aka.ms/twkg/dgi.0.2.zip). Once downloaded, extract its contents into `dgi.0.2/`.
+For convenience, the datasets were made available at [https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/dgi.0.2.zip](https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/dgi.0.2.zip). Once downloaded, extract its contents into `dgi.0.2/`.
 
 ## Prerequisite
 

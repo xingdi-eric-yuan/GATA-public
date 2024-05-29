@@ -2,7 +2,7 @@
 
 GATA's graph updater can be pre-trained by an Observation Generation or a Contrastive Observation Classification task. We make use of trajectories extracted from playing several text-based games.
 
-For convenience, the datasets were made available at [https://aka.ms/twkg/obs_gen.0.1.zip](https://aka.ms/twkg/obs_gen.0.1.zip). Once downloaded, extract its contents into `obs_gen.0.1/`.
+For convenience, the datasets were made available at [https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/obs_gen.0.1.zip](https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/obs_gen.0.1.zip). Once downloaded, extract its contents into `obs_gen.0.1/`.
 
 ## Prerequisite
 

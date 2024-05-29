@@ -2,7 +2,7 @@
 
 GATA's graph updater can be pre-trained by a Command Generation task. We make use of the set of cooking games available at [https://aka.ms/ftwp/dataset.zip](https://aka.ms/ftwp/dataset.zip) that were used for the [First TextWorld Problem competition](https://aka.ms/ftwp).
 
-For convenience, the datasets were made available at [https://aka.ms/twkg/cmd_gen.0.2.zip](https://aka.ms/twkg/cmd_gen.0.2.zip). Once downloaded, extract its contents into `cmd_gen.0.2/`.
+For convenience, the datasets were made available at [https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/cmd_gen.0.2.zip](https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/cmd_gen.0.2.zip). Once downloaded, extract its contents into `cmd_gen.0.2/`.
 
 ## Instructions
 

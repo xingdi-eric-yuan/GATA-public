@@ -2,7 +2,7 @@
 
 GATA's graph encoder can be pre-trained by a Action Prediction task. We make use of trajectories extracted from playing several text-based games.
 
-For convenience, the datasets were made available at [https://aka.ms/twkg/ap.0.2.zip](https://aka.ms/twkg/ap.0.2.zip). Once downloaded, extract its contents into `ap.0.2/`.
+For convenience, the datasets were made available at [https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/ap.0.2.zip](https://github.com/xingdi-eric-yuan/GATA-public/releases/download/data/ap.0.2.zip). Once downloaded, extract its contents into `ap.0.2/`.
 
 ## Prerequisite
 

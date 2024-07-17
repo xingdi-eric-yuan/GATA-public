@@ -1,4 +1,3 @@
-import torch
 import random
 import uuid
 import argparse
@@ -12,6 +11,11 @@ import numpy as np
 from collections import Counter
 from os.path import join as pjoin
 from functools import lru_cache
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 import textworld
 from textworld.logic import State, Rule, Proposition, Variable
@@ -456,7 +460,6 @@ def sort_target_commands(list_of_cmds):
             res.append(cmd)
     return res
 
-
 @lru_cache()
 def _rules_predicates_scope():
     rules = [
@@ -478,6 +481,16 @@ def _rules_predicates_scope():
     ]
     rules += [Rule.parse("query :: at(P, r) & at(f, r) & {fact}(f) -> {fact}(f)".format(fact=fact)) for fact in FOOD_FACTS]
     rules += [Rule.parse("query :: at(P, r) & at(s, r) & on(f, s) & {fact}(f) -> {fact}(f)".format(fact=fact)) for fact in FOOD_FACTS]
+    rules += [Rule.parse("query :: at(P, r) & at(c, r) & open(c) & in(f, c) & {fact}(f) -> {fact}(f)".format(fact=fact)) for fact in FOOD_FACTS]
+    return rules
+
+
+@lru_cache()
+def _rules_predicates_container():
+    rules = [
+        Rule.parse("query :: at(P, r) & at(c, r) & open(c) -> open(c)"),
+        Rule.parse("query :: at(P, r) & at(c, r) & open(c) & in(o, c) -> in(o, c)"),
+    ]
     rules += [Rule.parse("query :: at(P, r) & at(c, r) & open(c) & in(f, c) & {fact}(f) -> {fact}(f)".format(fact=fact)) for fact in FOOD_FACTS]
     return rules
 
@@ -529,6 +542,11 @@ def _rules_to_convert_link_predicates():
 
 def find_predicates_in_scope(state):
     actions = state.all_applicable_actions(_rules_predicates_scope())
+    return [action.postconditions[0] for action in actions]
+
+
+def find_predicates_in_container(state):
+    actions = state.all_applicable_actions(_rules_predicates_container())
     return [action.postconditions[0] for action in actions]
 
 
@@ -626,6 +644,9 @@ def process_local_obs_facts(info_game, info_facts, info_last_action, cmd):
     elif info_last_action.name == "examine" and "cookbook" in [v.name for v in info_last_action.variables]:
         return set(find_predicates_in_recipe(_get_state()))
 
+    elif (info_last_action.name.startswith("open") and "c" in [v.type for v in info_last_action.variables]):
+        return set(find_predicates_in_container(_get_state()))
+
     return info_last_action.postconditions
 
 
@@ -655,7 +676,7 @@ def filter_triplets(triplets):
             tp[i].append("is")
 
     tp = process_burning_triplets(tp)
-    # tp = process_direction_triplets(tp)
+    tp = process_direction_triplets(tp)
     return tp
 
 
